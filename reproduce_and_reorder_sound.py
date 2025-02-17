@@ -3,7 +3,6 @@ import os, sys
 import numpy as np
 import argparse
 import pandas as pd
-import matplotlib.pyplot as plt
 
 import mne
 from mne.decoding import cross_val_multiscore, SlidingEstimator, GeneralizingEstimator, LinearModel
