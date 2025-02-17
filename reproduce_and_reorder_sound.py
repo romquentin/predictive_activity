@@ -12,25 +12,8 @@ from sklearn.pipeline import make_pipeline
 from sklearn.model_selection import StratifiedKFold
 from collections import Counter
 
-from base import corresp
-from base import events_simple_pred
-from base import cond2code
-from base import events_omission, events_sound
-from base import reorder
-from base import getFiltPat
+from base import corresp, events_simple_pred, cond2code, events_omission, events_sound, reorder, getFiltPat, dadd
 
-def dadd(d,k,v):
-    '''
-    helper function, check if the key is in the dict, if not -- creates it, otherwise add to it to the list
-
-    d is a dict with values having type = list
-    k is a key (usually string)
-    v is a value
-    '''
-    if k in d:
-        d[k] += [v]
-    else:
-        d[k] = [v]
 
 os.environ['DEMARCHI_DATA_PATH'] ='/p/project/icei-hbp-2022-0017/demarchi/data_demarchi/MEG_demarchi'
 so.environ['TEMP_DATA_DEMARCHI'] = '$SCRATCH/memerr/demarchi'
@@ -257,7 +240,6 @@ for g,inds in grp.groups.items():
     else:
         clf = make_pipeline(LinearDiscriminantAnalysis())
     clf = GeneralizingEstimator(clf, n_jobs=-1, scoring='accuracy', verbose=gen_est_verbose)
-    #condcond2scores = {} # tuples of cond and reord 2 scores
 
     # cycle over entropies
     for cond,epochs in cond2epochs.items():
@@ -326,11 +308,6 @@ for g,inds in grp.groups.items():
             # fit on random, test on order simple pred
             cv_rd_to_sp_score = clf.score(X[test_rd], y_sp[test_rd])
 
-            # TODO: use assert with sample indices
-            #assert len( set( yrd1[train_rd] == yrd1[test_rd]) ) == 0
-            #assert len( set( yrd1[train_rd] == y_sp[test_rd]) ) == 0 
-            #assert len( set( yrd1[train_rd] == y0[test_rd])   ) == 0 
-
             # DQ: is it good to restrict test number so much?
             if reord_narrow_test:
                 test_reord = np.isin(orig_nums_reord, test_rd)  # why sum(test_reord) != len(test_rd)
@@ -398,37 +375,6 @@ for g,inds in grp.groups.items():
                 print('Saving ',fnf)
                 np.save(fnf , patterns_ )    # folds x times x classes x channels
 
-     #   # train on non-random simplepred and test on same or reord
-     #   for train, test in cv.split(X, y_sp):
-     #       print(f"##############  Starting {cond} fold sp2")
-     #       clf.fit(X[train], y_sp[train])  
-     #       cv__to_sp_score = clf.score(X[test], y_sp[test])
-     #       cv__to_reord_score = clf.score(Xsp_reord[test], ysp_reord[test])
-     #       dadd(scores,f'{s}_sp_to_{s}_sp', cv__to_sp_score )
-     #       dadd(scores,f'{s}_sp_to_{s}_reord', cv__to_reord_score )
-
-     #   # train on non-random simplepred and test on same or reord
-     #   for train, test in cv.split(Xsp_reord, ysp_reord):
-     #       print(f"##############  Starting {cond} fold sp2")
-     #       clf.fit(X[train], y_sp[train])  
-     #       cv1 = clf.score(X[test], y_sp[test])
-     #       cv2 = clf.score(Xsp_reord[test], ysp_reord[test])
-     #       dadd(scores,f'{s}_sp_reord_to_{s}_sp', cv1 )
-     #       dadd(scores,f'{s}_sp_reord_to_{s}_sp_reord', cv2 )
-
-        #for train_rd, test_rd in cv.split(Xrd2, yrd2):
-        #    print("##############  Starting ordered")
-        #    print('Lens of train and test are :',len(train_rd), len(test_rd) )
-        #    # Train and test with cross-validation
-        #    clf.fit(Xrd2[train_rd], yrd2[train_rd])  # fit on random
-
-
-        #for train, test in cv.split(X, y_sp):
-        #    clf.fit(X[train], y_sp[train])  
-        #    cv__to__score = clf.score(X[test], y_sp[test])
-
-        # TODO: add or to or
-
         # save everything
         for k,v in scores.items():
             scores[k] = np.array(v)
@@ -436,18 +382,5 @@ for g,inds in grp.groups.items():
             print('Saving ',fnf)
             np.save(fnf , v )
 
-        #cv_rd_to_rd_scores = np.array(cv_rd_to_rd_scores)
-        #cv_rd_to__scores = np.array(cv_rd_to__scores)
-        #cv_rd_to_reord_scores = np.array(cv_rd_to_reord_scores)
-        ## save scores (cross-validation)
-        #np.save(op.join(results_folder, 'cv_rd_to_rd__sp_scores.npy'), cv_rd_to_rd_scores)
-
-        #np.save(op.join(results_folder, f'cv_{s}_to_{s}__sp_scores.npy'), ?)
-
-        #s = cond2code[cond]
-        #np.save(op.join(results_folder, f'cv_rd_to_{s}__sp_scores.npy'), cv_rd_to__scores)
-
-        #s += 'rd'
-        #np.save(op.join(results_folder, f'cv_rd_to_{s}__sp_scores.npy'), cv_rd_to_reord_scores)
+        # clean
         import gc; gc.collect()
-
