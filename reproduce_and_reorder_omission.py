@@ -1,4 +1,3 @@
-from base import gat_stats
 import os.path as op
 import os, sys
 import numpy as np
@@ -23,9 +22,6 @@ tmin, tmax = -0.7, 0.7
 crop_twice = 0
 v2only = 1
 
-# Start the main loop analysis - Loop on participant
-#for meg_rd, meg_mm, meg_mp, meg_or in zip(MEG_rds, MEG_mms, MEG_mps, MEG_ors):
-
 # Import the argparse module
 import argparse
 
@@ -34,8 +30,6 @@ parser = argparse.ArgumentParser()
 
 # Add the arguments to the parser
 parser.add_argument("--subject", type=int, default =-1, required=True)
-#parser.add_argument("--extract_filters_patterns", type=int, default =1)
-#parser.add_argument("--nfolds", type=int, default=5)
 parser.add_argument("--force_refilt", type=int, default=0)
 parser.add_argument("--exit_after", type=str, default='end')
 
@@ -85,8 +79,6 @@ for g,inds in grp.groups.items():
     p0 = op.join( os.path.expandvars('$SCRATCH/memerr/demarchi') , meg_rd[:-15] )
     if op.exists(op.join(p0, 'flt_rd-epo.fif')) and (not force_refilt):
         print('!!!!!   Loading precomputed filtered epochs from ',p0)
-        #epochs_rd = mne.read_epochs( op.join(p0, 'flt_rd-epo.fif'))
-        #epochs_or = mne.read_epochs( op.join(p0, 'flt_or-epo.fif'))
         raw_rd = mne.io.read_raw_fif(op.join(p0,'flt_rd-raw.fif'), preload=True)
         raw_rd.pick_types(meg=True, eog=False, ecg=False,
                       ias=False, stim=False, syst=False)

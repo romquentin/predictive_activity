@@ -19,24 +19,21 @@ events_sound = [ 1,2,3,4]
 
 cond2code = dict(zip(['random','midminus','midplus','ordered'],['rd','mm','mp','or']))
 
-# trans mat ordered
-#M = np.zeros((4,4))
-#M += np.diag(4*[0.25])
-#i = 0
-#for c in range(4):
-#    M[i,(i+1) % 4] = 0.75; i+= 1
-# M[to,from]
 colors_ordered = dict(zip(np.arange(4),  ['blue','cyan','yellow','red'] ) )
+###### define transition matricies for different entropy conditions
+# ordered
 Mor = np.array([[0.25, 0.75, 0.  , 0.  ],
                 [0.  , 0.25, 0.75, 0.  ],
                 [0.  , 0.  , 0.25, 0.75],
                 [0.75, 0.  , 0.  , 0.25]])
 
+# meidum-plus
 Mmp = np.array([[ 25, 60, 15, 0],
                 [0, 25, 60, 15],
                 [15, 0, 25, 60],
                 [60, 15, 0, 25]])/100.
 
+# meidum-minus
 Mmm = np.array( [[25, 38, 37, 0  ],
                 [ 0 , 25, 38, 37 ], 
                 [ 37, 0 , 25, 38 ], 
@@ -48,6 +45,10 @@ Mt2M['mp'] = Mmp
 Mt2M['mm'] = Mmm
 
 def events_simple_pred(events, Mtype):
+    '''
+    eventgs -- an MNE-produced events array
+    Mtype -- string argument, a key in Mt2M dict or 'rd', it determins for what kind of matrix we generate the 'simple prediction'
+    '''
     assert events.ndim == 2
     # this will be the resulting transformed events array
     r = np.zeros_like(events)
@@ -175,88 +176,7 @@ def reorder(random_events, events, raw_rd, del_processed = True,
     assert len(set(orig_nums_reord)) > 4
     return epochs_reord, orig_nums_reord
 
-def create_seq(n_trials, structure):
-    """
-    This function create a sequence with n_trials and a specific structure from random to structure (see Demarchi et al. 2019)
-    :param n_trials: number of trials
-    :param structure: integer (from 0 to 3, 0 being random)
-    :return: dataFrame
-    """
-    sounds = [0, 1, 2, 3]
-    trials = np.arange(n_trials)
-    if structure == 0:
-        data = pd.DataFrame({'trials': trials,
-                             'sound': np.random.randint(4, size=n_trials)})
-    elif structure == 3:
-        data = pd.DataFrame({'trials': trials,
-                             'sound': np.zeros(len(trials), dtype=int)})
-        for trial in trials:
-            # Initialize the first key of each block (random)
-            if trial == 0:
-                data.sound.at[trial] = np.random.choice(sounds)
-            else:
-                rnd = np.random.random()
-                if data.sound[trial-1] == sounds[0]:
-                    if rnd < 3/4.:
-                        data.sound.at[trial] = sounds[1]
-                    else:
-                        data.sound.at[trial] = sounds[0]
-                elif data.sound[trial-1] == sounds[1]:
-                    if rnd < 3/4.:
-                        data.sound.at[trial] = sounds[2]
-                    else:
-                        data.sound.at[trial] = sounds[1]
-                elif data.sound[trial-1] == sounds[2]:
-                    if rnd < 3/4.:
-                        data.sound.at[trial] = sounds[3]
-                    else:
-                        data.sound.at[trial] = sounds[2]
-                elif data.sound[trial-1] == sounds[3]:
-                    if rnd < 3/4.:
-                        data.sound.at[trial] = sounds[0]
-                    else:
-                        data.sound.at[trial] = sounds[3]
-    return data
-
-
-def decod_stats(X):
-    from mne.stats import permutation_cluster_1samp_test
-    """Statistical test applied across subjects"""
-    # check input
-    X = np.array(X)
-
-    # stats function report p_value for each cluster
-    T_obs_, clusters, p_values, _ = permutation_cluster_1samp_test(
-        X, out_type='mask', n_permutations=2**12, n_jobs=6,
-        verbose=False)
-
-    # format p_values to get same dimensionality as X
-    p_values_ = np.ones_like(X[0]).T
-    for cluster, pval in zip(clusters, p_values):
-        p_values_[cluster] = pval
-
-    return np.squeeze(p_values_)
-
-
-def gat_stats(X):
-    from mne.stats import spatio_temporal_cluster_1samp_test
-    """Statistical test applied across subjects"""
-    # check input
-    X = np.array(X)
-    X = X[:, :, None] if X.ndim == 2 else X
-
-    # stats function report p_value for each cluster
-    T_obs_, clusters, p_values, _ = spatio_temporal_cluster_1samp_test(
-        X, out_type='mask',
-        n_permutations=2**12, n_jobs=-1, verbose=False)
-
-    # format p_values to get same dimensionality as X
-    p_values_ = np.ones_like(X[0]).T
-    for cluster, pval in zip(clusters, p_values):
-        p_values_[cluster.T] = pval
-
-    return np.squeeze(p_values_).T
-
+# for filter patterns extraction
 def getFiltPat(genclf):
     from mne.decoding import get_coef
     filters_ = [get_coef(genclf.estimators_[i],'filters_') for i in range(len(genclf.estimators_))]
@@ -267,6 +187,7 @@ def getFiltPat(genclf):
 
     return filters_, patterns_
 
+# not used 
 def runlines(fnf,line_range_start,line_range_end):
     # range is inclusive
     with open(fnf,'r') as f:
@@ -293,7 +214,13 @@ def runlines(fnf,line_range_start,line_range_end):
     return locals()
 
 def dadd(d,k,v):
-    # dict, key, val
+    '''
+    helper function, check if the key is in the dict, if not -- creates it, otherwise add to it to the list
+
+    d is a dict with values having type = list
+    k is a key (usually string)
+    v is a value
+    '''
     if k in d:
         d[k] += [v]
     else:
