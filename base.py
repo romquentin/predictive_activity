@@ -3,6 +3,7 @@ import pandas as pd
 import seaborn as sns
 import mne
 
+# fixed ordering os subject ids, for convenience
 canon_subj_order =  ['19830114RFTM', '19921111BRHC', '19930630MNSU', '19930118IMSH',
        '19861231ANSR', '19851130EIFI', '19930524GNTA', '19871229CRBC',
        '19940403HIEC', '19900606KTAD', '19880328AGSG', '19950326IIQI',
