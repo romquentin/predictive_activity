@@ -3,7 +3,6 @@ import os, sys
 import numpy as np
 import argparse
 import pandas as pd
-import matplotlib.pyplot as plt
 
 import mne
 from mne.decoding import cross_val_multiscore, SlidingEstimator, GeneralizingEstimator, LinearModel
@@ -12,29 +11,14 @@ from sklearn.pipeline import make_pipeline
 from sklearn.model_selection import StratifiedKFold
 from collections import Counter
 
-from base import corresp
-from base import events_simple_pred
-from base import cond2code
-from base import events_omission, events_sound
-from base import reorder
-from base import getFiltPat
+from base import corresp, events_simple_pred, cond2code, events_omission, events_sound, reorder, getFiltPat, dadd
+
 
 os.environ['DEMARCHI_DATA_PATH'] ='/p/project/icei-hbp-2022-0017/demarchi/data_demarchi/MEG_demarchi'
 so.environ['TEMP_DATA_DEMARCHI'] = '$SCRATCH/memerr/demarchi'
 
 path_data = os.path.expandvars('$DEMARCHI_DATA_PATH') + '/MEG'
 path_results = os.path.expandvars('$DEMARCHI_DATA_PATH') + '/results'
-# list all data files for each condition
-# DWARNING: this assumes same ordering of files (participants)
-#MEG_rds = sorted([f for f in os.listdir(path_data) if 'random' in f])
-#MEG_mms = sorted([f for f in os.listdir(path_data) if 'midminus' in f])
-#MEG_mps = sorted([f for f in os.listdir(path_data) if 'midplus' in f])
-#MEG_ors = sorted([f for f in os.listdir(path_data) if 'ordered' in f])
-## Start the main loop analysis - Loop on participant
-#for meg_rd, meg_mm, meg_mp, meg_or in zip(MEG_rds, MEG_mms, MEG_mps, MEG_ors):
-# Initialize list of scores (with cross_validation)
-
-# Import the argparse module
 
 # Create an ArgumentParser object
 parser = argparse.ArgumentParser()
@@ -56,24 +40,23 @@ nfolds = args.nfolds
 force_refilt = args.force_refilt
 shuffle_cv = bool(args.shuffle_cv)
 
-
-
 # define tmin and tmax
 tmin, tmax = -0.7, 0.7
-events_all = events_sound + events_omission
-del_processed = 1  
-cut_fl = 0 
+events_all = events_sound + events_omission # event_ids to be used to select events with MNE
+del_processed = 1  # determines the version of the reordering algorithm. Currently only = 1 works
+cut_fl = 0 # whether we cut out first and last events from the final result           
 reord_narrow_test = 0 
 #gen_est_verbose = True
-gen_est_verbose = False # def True
-dur = 200
-nsamples = 33
+gen_est_verbose = False # def True, argument of GeneralizingEstimator
+dur = 200 # duration (in samples) of pre-task and post-task data  
+nsamples = 33 # trial duration in samples
 
 
 # parse directory names from the data directory
 rows = [ dict(zip(['subj','block','cond','path'], v[:-15].split('_') + [v])  ) for v in os.listdir(path_data)]
 df0 = pd.DataFrame(rows)
 df = df0.copy()
+# simple readable subject id
 df['sid'] = df['subj'].apply(lambda x: corresp[x])
 
 # which subject IDs to use
@@ -114,18 +97,19 @@ for g,inds in grp.groups.items():
     # load or recalc filtered epochs
     p0 = op.join( os.path.expandvars('$TEMP_DATA_DEMARCHI') , meg_rd[:-15] )
     if op.exists(op.join(p0, 'flt_rd-epo.fif')) and (not force_refilt):
-        print('!!!!!   Loading precomputed filtered epochs from ',p0)
-        #epochs_rd = mne.read_epochs( op.join(p0, 'flt_rd-epo.fif'))
-        #epochs_or = mne.read_epochs( op.join(p0, 'flt_or-epo.fif'))
+        print('!!!!!   Loading precomputed filtered raws and epochs from ',p0)
         raw_rd = mne.io.read_raw_fif(op.join(p0,'flt_rd-raw.fif'), preload=True)
+        # keep only MEG channels
         raw_rd.pick_types(meg=True, eog=False, ecg=False,
                       ias=False, stim=False, syst=False)
 
+        # actually read epochs and filtered raws
         for cond,condcode in cond2code.items():
             s = condcode
             cond2epochs[cond] = mne.read_epochs( op.join(p0, f'flt_{s}-epo.fif')) 
 
             raw_ = mne.io.read_raw_fif(op.join(p0,f'flt_{s}-raw.fif'), preload=True) 
+            # keep only MEG channels
             raw_.pick_types(meg=True, eog=False, ecg=False,
                           ias=False, stim=False, syst=False)
             cond2raw[cond] = raw_
@@ -134,15 +118,16 @@ for g,inds in grp.groups.items():
         print('!!!!!   (Re)compute filtered raws from ',p0)
         for cond,condcode in cond2code.items():
             fnf = op.join(path_data, subdf.to_dict('index')[cond]['path'] )
-            # Read raw files
+            # Read raw file
             raw = mne.io.read_raw_fif(fnf, preload=True)
-            print('Filtering ')
+            print(f'Filtering raw {fnf}')
             raw.filter(0.1, 30, n_jobs=-1)
             if not op.exists(p0):
                 os.makedirs(p0)
             raw.save( op.join(p0, f'flt_{condcode}-raw.fif'), overwrite = True )
             # Get events
             events = mne.find_events(raw, shortest_event=1)
+            # keep only MEG channels
             raw.pick_types(meg=True, eog=False, ecg=False,
                           ias=False, stim=False, syst=False)
             cond2raw[cond] = raw
@@ -158,7 +143,7 @@ for g,inds in grp.groups.items():
         raw_rd = cond2raw['random']
 
 
-    # remove omission and following trials in random trials
+    #### remove omission and following trials in random trials
     lens_ext = []
     cond2counts = {}
     # cycle over four entropy conditions
@@ -207,9 +192,9 @@ for g,inds in grp.groups.items():
 
         cond2counts[cond+'_reord'] = Counter(cond2epochs_reord[cond].events[:,2])
 
-        #######################################################
-        ##############   reorder simple prediction
-        #######################################################
+        #########################
+        ####   reorder simple prediction
+        #########################
 
         # first we transform events from the current entropy condtion into it's "simple prediction" (most probable next event) verion 
         events = events_simple_pred(epochs.events.copy(), cond2code[cond])
@@ -227,7 +212,7 @@ for g,inds in grp.groups.items():
     np.savez(fnf , cond2counts )
 
     ###################################################################
-    ########################     CV
+    ########################     cross validation
     ###################################################################
     print("------------   Starting CV")
     cv = StratifiedKFold(nfolds, shuffle=shuffle_cv)
@@ -247,12 +232,6 @@ for g,inds in grp.groups.items():
         sys.exit(0)
 
 
-    # helper function, check if the key is in the dict, if not -- creates it, otherwise add to it
-    def dadd(d,k,v):
-        if k in d:
-            d[k] += [v]
-        else:
-            d[k] = [v]
 
     # Initialize classifier
     if extract_filters_patterns:
@@ -260,7 +239,6 @@ for g,inds in grp.groups.items():
     else:
         clf = make_pipeline(LinearDiscriminantAnalysis())
     clf = GeneralizingEstimator(clf, n_jobs=-1, scoring='accuracy', verbose=gen_est_verbose)
-    #condcond2scores = {} # tuples of cond and reord 2 scores
 
     # cycle over entropies
     for cond,epochs in cond2epochs.items():
@@ -329,11 +307,6 @@ for g,inds in grp.groups.items():
             # fit on random, test on order simple pred
             cv_rd_to_sp_score = clf.score(X[test_rd], y_sp[test_rd])
 
-            # TODO: use assert with sample indices
-            #assert len( set( yrd1[train_rd] == yrd1[test_rd]) ) == 0
-            #assert len( set( yrd1[train_rd] == y_sp[test_rd]) ) == 0 
-            #assert len( set( yrd1[train_rd] == y0[test_rd])   ) == 0 
-
             # DQ: is it good to restrict test number so much?
             if reord_narrow_test:
                 test_reord = np.isin(orig_nums_reord, test_rd)  # why sum(test_reord) != len(test_rd)
@@ -401,37 +374,6 @@ for g,inds in grp.groups.items():
                 print('Saving ',fnf)
                 np.save(fnf , patterns_ )    # folds x times x classes x channels
 
-     #   # train on non-random simplepred and test on same or reord
-     #   for train, test in cv.split(X, y_sp):
-     #       print(f"##############  Starting {cond} fold sp2")
-     #       clf.fit(X[train], y_sp[train])  
-     #       cv__to_sp_score = clf.score(X[test], y_sp[test])
-     #       cv__to_reord_score = clf.score(Xsp_reord[test], ysp_reord[test])
-     #       dadd(scores,f'{s}_sp_to_{s}_sp', cv__to_sp_score )
-     #       dadd(scores,f'{s}_sp_to_{s}_reord', cv__to_reord_score )
-
-     #   # train on non-random simplepred and test on same or reord
-     #   for train, test in cv.split(Xsp_reord, ysp_reord):
-     #       print(f"##############  Starting {cond} fold sp2")
-     #       clf.fit(X[train], y_sp[train])  
-     #       cv1 = clf.score(X[test], y_sp[test])
-     #       cv2 = clf.score(Xsp_reord[test], ysp_reord[test])
-     #       dadd(scores,f'{s}_sp_reord_to_{s}_sp', cv1 )
-     #       dadd(scores,f'{s}_sp_reord_to_{s}_sp_reord', cv2 )
-
-        #for train_rd, test_rd in cv.split(Xrd2, yrd2):
-        #    print("##############  Starting ordered")
-        #    print('Lens of train and test are :',len(train_rd), len(test_rd) )
-        #    # Train and test with cross-validation
-        #    clf.fit(Xrd2[train_rd], yrd2[train_rd])  # fit on random
-
-
-        #for train, test in cv.split(X, y_sp):
-        #    clf.fit(X[train], y_sp[train])  
-        #    cv__to__score = clf.score(X[test], y_sp[test])
-
-        # TODO: add or to or
-
         # save everything
         for k,v in scores.items():
             scores[k] = np.array(v)
@@ -439,18 +381,5 @@ for g,inds in grp.groups.items():
             print('Saving ',fnf)
             np.save(fnf , v )
 
-        #cv_rd_to_rd_scores = np.array(cv_rd_to_rd_scores)
-        #cv_rd_to__scores = np.array(cv_rd_to__scores)
-        #cv_rd_to_reord_scores = np.array(cv_rd_to_reord_scores)
-        ## save scores (cross-validation)
-        #np.save(op.join(results_folder, 'cv_rd_to_rd__sp_scores.npy'), cv_rd_to_rd_scores)
-
-        #np.save(op.join(results_folder, f'cv_{s}_to_{s}__sp_scores.npy'), ?)
-
-        #s = cond2code[cond]
-        #np.save(op.join(results_folder, f'cv_rd_to_{s}__sp_scores.npy'), cv_rd_to__scores)
-
-        #s += 'rd'
-        #np.save(op.join(results_folder, f'cv_rd_to_{s}__sp_scores.npy'), cv_rd_to_reord_scores)
+        # clean
         import gc; gc.collect()
-
