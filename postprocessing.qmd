@@ -1552,7 +1552,6 @@ if (save) {
   g %>% ggsave(filename = "./figures/fig2_MattersArising.png", width = 8, height = 5.5, dpi = 300, device = ragg::agg_png)
 }
 ```
-
 ## Supplementary Figure 1
 
 ```{r}
