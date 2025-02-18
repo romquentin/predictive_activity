@@ -67,7 +67,7 @@ matrix_to_df2 <- function(array, row.name, col.name, val.name) {
 ### Batch data loading
 
 ```{r}
-load_loop_subj <- function(folder, condition, diag = F) {
+load_loop_subj <- function(folder, condition, diag = F, crop=T) {
   
   # Individual scores
   array.scores <- array(dim = c(141,141,n.subj))
@@ -96,9 +96,12 @@ load_loop_subj <- function(folder, condition, diag = F) {
     apply(c(1,2), mean) %>%
     matrix_to_df2(row.name = "t_train", col.name = "t_test", val.name = "accuracy") %>%
     # --- convert indices to time
-    mutate(across(starts_with("t_"), ~(dt*(.-1)-700))) %>%
-    # --- crop time
-    filter(t_train>=0, (t_train-333) < dt)
+    mutate(across(starts_with("t_"), ~(dt*(.-1)-700)))
+  
+  # --- crop time if requested (default)
+  if (crop) {
+    df.mean %<>% filter(t_train>=0, (t_train-333) < dt)
+  }
   
   return(list(array.scores, df.mean))
 }
@@ -1124,7 +1127,7 @@ df.plot %>%
 g.mostlikely
 ```
 
-## Figure 1 & Supplementary Figure 1
+## Figure 1 & Supplementary Figure 2
 
 ### Initialize
 
@@ -1256,14 +1259,14 @@ g.fig1.1.corr <- (
 g.fig1.1.corr
 
 # Assemble Supplementary Figure 1a
-g.supfig1.corr <- (
+g.supfig2.corr <- (
   g.base[["corr"]][["omissions"]] + 
     (g.diff[["corr"]][["omissions"]] + plot_layout(tag_level = "new")) +
     plot_layout(widths = c(2, 1)) &
     theme(strip.text.x = element_text(face = "bold"))
 )
 
-g.supfig1.corr
+g.supfig2.corr
 ```
 
 ### Theoretical null: accuracy plots
@@ -1415,14 +1418,14 @@ if (save) {
 
 ```{r, fig.width = 7, fig.height = 5.5}
 
-((g.supfig1.acc / g.supfig1.corr & theme(axis.text.x = element_text(angle = 45, hjust = 1))) + 
+((g.supfig2.acc / g.supfig2.corr & theme(axis.text.x = element_text(angle = 45, hjust = 1))) + 
    plot_layout(heights = c(4, 1))) +
   plot_annotation(tag_levels = "a") -> g
 
 g
 
 if (save) {
-  g %>% ggsave(filename = "./figures/supfig1_MattersArising.png", width = 7, height = 5.5, dpi = 300, device = ragg::agg_png)
+  g %>% ggsave(filename = "./figures/supfig2_MattersArising.png", width = 7, height = 5.5, dpi = 300, device = ragg::agg_png)
 }
 ```
 
@@ -1550,7 +1553,72 @@ if (save) {
 }
 ```
 
-## Supplementary Figure 2
+## Supplementary Figure 1
+
+```{r}
+# Load subject-level data (used for clustering) and derive grand average (used for visualization) **without cropping**
+tic()
+df.supfig1.mean <- tibble()
+df.supfig1.subj <- tibble()
+for (manip in c("","_reord")) { 
+  
+  for (direction in c("rd_to_rd", "rd_to_mm", "rd_to_mp", "rd_to_or")) {
+    tmp <- load_loop_subj(folder = "reorder_random",
+                          condition = paste0(direction, manip),
+                          crop = FALSE)
+    
+    df.supfig1.mean %<>% bind_rows(tmp[[2]] %>% mutate(manip = manip, direction = direction))
+    df.supfig1.subj %<>% bind_rows(tibble(manip = manip, direction = direction, array = list(tmp[[1]])))
+  }
+}
+toc() # ~40s
+
+```
+
+```{r}
+df.supfig1.mean %>% mutate_if(is.character, as.factor) %>% summary
+
+tmp <- filter(df.supfig1.subj, direction == "rd_to_rd", manip == "")[[1, "array"]][[1]]
+
+tmp.diag <- matrix(nrow = dim(tmp)[3], ncol = dim(tmp)[1])
+for (i in 1:dim(tmp)[3]) {
+  tmp.diag[i,] <- a[,,i] %>% diag
+}
+
+# 
+# # Check
+# df.supfig1.mean %>% 
+#   filter(t_train == t_test,
+#          direction == "rd_to_rd",
+#          manip == "") %>% 
+#   mutate(acc2 = ,
+#          comp = (accuracy == acc2))
+
+df.supfig1.mean %>% 
+  filter(t_train == t_test,
+         direction == "rd_to_rd",
+         manip == "") %>% 
+  mutate(sd = tmp.diag %>% apply(MARGIN = 2, FUN = sd) %>% `/`(sqrt(33))) %>% 
+  filter(t_train >= -300, t_train <= 700) %>% 
+  
+  ggplot(aes(x = t_train, y = accuracy)) +
+  geom_hline(yintercept = 0.25, color = "grey50", linetype = 2) +
+  geom_ribbon(aes(ymin = accuracy-sd, ymax = accuracy+sd), alpha = .3) +
+  geom_line(size = 0.8) + 
+  scale_x_continuous(breaks = scales::pretty_breaks(10), name = "Time (ms)") +
+  scale_y_continuous(breaks = seq(.20, .40, .02), limits = c(.2,.4), name = "Accuracy") +
+  coord_cartesian(expand = F)-> g
+
+g
+
+if (save) {
+  g %>% ggsave(filename = "./figures/supfig1_MattersArising.png", width = 4, height = 2.5, dpi = 300, device = ragg::agg_png)
+}
+  
+```
+
+
+## Supplementary Figure 3
 
 ```{r, fig.width = 6, fig.height = 2.3}
 
@@ -1618,6 +1686,6 @@ matrix_to_df2(mat.T$MP, "from", "to", "p") %>%
 g
 
 if (save) {
-  g %>% ggsave(filename = "./figures/supfig2_MattersArising.png", width = 7, height = 2.5, dpi = 300, device = ragg::agg_png)
+  g %>% ggsave(filename = "./figures/supfig3_MattersArising.png", width = 7, height = 2.5, dpi = 300, device = ragg::agg_png)
 }
 ```
