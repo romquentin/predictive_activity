@@ -353,8 +353,6 @@ theme_update(plot.tag.position = c(0, 1),
              plot.tag = element_text(size = 14, hjust = 0, vjust = 1, face = "bold"))
 ```
 
-
-
 # REPLICATION & REORDERING (empirical null)
 
 ### Load data
@@ -548,7 +546,6 @@ df.plot.0.corr <- df.corr.mean %>%
 df.plot.0.corr
 ```
 
-
 # THEORETICAL NULL
 
 ### Load confusion matrices & calculate
@@ -738,7 +735,6 @@ df.plot.maths.corr
 
 ```
 
-
 # PREDICTING MOST LIKELY
 
 ## Load data
@@ -912,7 +908,6 @@ df.plot.ml.corr <- df.corr.ml.mean %>%
 df.plot.ml.corr
 
 ```
-
 
 # FIGURES
 
@@ -1429,10 +1424,6 @@ if (save) {
 }
 ```
 
-
-
-
-
 ## Figure 2
 
 ```{r}
@@ -1552,6 +1543,7 @@ if (save) {
   g %>% ggsave(filename = "./figures/fig2_MattersArising.png", width = 8, height = 5.5, dpi = 300, device = ragg::agg_png)
 }
 ```
+
 ## Supplementary Figure 1
 
 ```{r}
@@ -1615,7 +1607,6 @@ if (save) {
 }
   
 ```
-
 
 ## Supplementary Figure 3
 
