@@ -13,7 +13,6 @@ from collections import Counter
 
 from base import corresp, events_simple_pred, cond2code, events_omission, events_sound, reorder, getFiltPat, dadd
 
-
 os.environ['DEMARCHI_DATA_PATH'] ='/p/project/icei-hbp-2022-0017/demarchi/data_demarchi/MEG_demarchi'
 so.environ['TEMP_DATA_DEMARCHI'] = '$SCRATCH/memerr/demarchi'
 
