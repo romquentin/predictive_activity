@@ -22,13 +22,14 @@ Using [astral-uv](https://docs.astral.sh/uv/getting-started/) for example, you c
     uv pip install -r requirements.txt
     ```
 
-3. Execute the python scripts `reproduce_and_reorder_sound.py` and `reproduce_and_reorder_omissions.py` to replicate the decoding performed in the original Demarchi et al. study and our empirical approach that invalidate their results. Please note that you will need to adjust the paths (line 16 and 17) to access the data according to where you have downloaded it. For each participant, you should get a new folder with two subfolders (one for sounds, another for omissions), each containing:  
+3. Execute the python scripts `reproduce_and_reorder_sound.py` and `reproduce_and_reorder_omissions.py` to replicate the decoding performed in the original Demarchi et al. study and our empirical approach that invalidate their results. Please note that you will need to adjust the paths (line 16 and 17) to access the data according to where you have downloaded it. You also have to add an argument `--subject` with the subject number (e.g., 0). For each participant, you should get a new folder with two subfolders (one for sounds, another for omissions), each containing:  
 
 - the confusion matrices of the classifier at each time point in `rd_to_rd_confmats.npz`  
 - classification accuracies across the temporal generalization matrix in `*.npy*` files which are named `cv_<training condition>_(reord)_to_<testing condition>_(reord)_(sp)_scores.npy`
 
 The suffix `reord` means that the training (or testing) data is random data epoched and reordered to reproduce the sequence of sounds found in the corresponding structured condition.  
 The suffix `sp` stands for "**s**imple **p**rediction" and means that the classifier accuracy was calculated based on trying to decode the most likely stimulus instead of the presented one (see the manuscript for more details).
+The `reproduce_and_reorder_sound.py` takes approximately one hour per participant. The `reproduce_and_reorder_omission.py` is several times faster.
 
 A sample of output data containing all classification results for 2 participants is provided in the `/sample` folder.
 

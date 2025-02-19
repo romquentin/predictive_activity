@@ -13,8 +13,8 @@ from collections import Counter
 
 from base import corresp, events_simple_pred, cond2code, events_omission, events_sound, reorder, getFiltPat, dadd
 
-os.environ['DEMARCHI_DATA_PATH'] ='/p/project/icei-hbp-2022-0017/demarchi/data_demarchi/MEG_demarchi'
-so.environ['TEMP_DATA_DEMARCHI'] = '$SCRATCH/memerr/demarchi'
+os.environ['DEMARCHI_DATA_PATH'] ='/Users/romainquentin/Desktop/data/MEG_demarchi'
+os.environ['TEMP_DATA_DEMARCHI'] = '/Users/romainquentin/Desktop/data/MEG_demarchi'
 
 path_data = os.path.expandvars('$DEMARCHI_DATA_PATH') + '/MEG'
 path_results = os.path.expandvars('$DEMARCHI_DATA_PATH') + '/results'
@@ -56,7 +56,7 @@ rows = [ dict(zip(['subj','block','cond','path'], v[:-15].split('_') + [v])  ) f
 df0 = pd.DataFrame(rows)
 df = df0.copy()
 # simple readable subject id
-df['sid'] = df['subj'].apply(lambda x: corresp[x])
+df['sid'] = df['subj'].apply(lambda x: corresp.get(x, 'unknown'))
 
 # which subject IDs to use
 sids_to_use = [args.subject]
