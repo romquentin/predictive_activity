@@ -11,7 +11,7 @@ from sklearn.pipeline import make_pipeline
 from sklearn.model_selection import StratifiedKFold
 
 from tqdm import tqdm
-from base import corresp,events_simple_pred,cond2code
+from base import corresp,events_simple_pred,cond2code, events_omission, events_sound, reorder, getFiltPat, dadd
 
 path_data = os.path.expandvars('$DEMARCHI_DATA_PATH') + '/MEG'
 path_results = os.path.expandvars('$DEMARCHI_DATA_PATH') + '/results'
@@ -22,9 +22,10 @@ crop_twice = 0
 parser = argparse.ArgumentParser()
 
 # Add the arguments to the parser
-parser.add_argument("--subject", type=int, default =-1, required=True)
-parser.add_argument("--force_refilt", type=int, default=0)
+parser.add_argument('-s',"--subject", type=int, default =-1, required=True, help='subject index (zero-based integer)')
+parser.add_argument("--force_refilt", type=int, default=0, help='force recalc of filtered raws')
 parser.add_argument("--exit_after", type=str, default='end')
+
 
 # Parse the arguments
 args = parser.parse_args()
@@ -43,14 +44,16 @@ grp = df.groupby(['subj'])
 assert grp.size().min() == grp.size().max()
 assert grp.size().min() == 4
 
+events_all = events_sound + events_omission # event_ids to be used to select events with MNE
+
 for g,inds in grp.groups.items():
     subdf = df.loc[inds]
 
     subdf= subdf.set_index('cond')
     subdf = subdf.drop(columns=['subj','block','sid'])
 
-    meg_rd = subdf.to_dict('index')['random']['path']
-    meg_or = subdf.to_dict('index')['ordered']['path']
+    meg_rd = subdf.loc['random','path']
+    meg_or = subdf.loc['ordered','path']
     print(meg_rd, meg_or)
 
     # results folder where to save the scores for one participant
@@ -87,7 +90,7 @@ for g,inds in grp.groups.items():
     else:
         print('!!!!!   (Re)compute filtered raws from ',p0)
         for cond,condcode in cond2code.items():
-            fnf = op.join(path_data, subdf.to_dict('index')[cond] )
+            fnf = op.join(path_data, subdf.loc[cond,'path'] )
             # Read raw files
             raw = mne.io.read_raw_fif(fnf, preload=True)
             print('Filtering ')
@@ -95,11 +98,12 @@ for g,inds in grp.groups.items():
             if not op.exists(p0):
                 os.makedirs(p0)
             raw.save( op.join(p0, f'flt_{condcode}-raw.fif'), overwrite = True )
+            # Get events
+            events = mne.find_events(raw, shortest_event=1)
+
             raw.pick_types(meg=True, eog=False, ecg=False,
                           ias=False, stim=False, syst=False)
             cond2raw[cond] = raw
-            # Get events
-            events = mne.find_events(raw, shortest_event=1)
 
             # Create epochs
             epochs = mne.Epochs(raw, events,
@@ -311,3 +315,5 @@ for g,inds in grp.groups.items():
     # save scores
     np.save(op.join(results_folder, 'cv_rd_to_mp_scores.npy'), cv_rd_to_mp_score)
     np.save(op.join(results_folder, 'cv_rd_to_mp_reord_scores.npy'), cv_rd_to_mprd_score)
+
+    print(f'Omission analysis for participant = {participant} finished successfully!')

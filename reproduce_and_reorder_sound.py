@@ -13,9 +13,6 @@ from collections import Counter
 
 from base import corresp, events_simple_pred, cond2code, events_omission, events_sound, reorder, getFiltPat, dadd
 
-os.environ['DEMARCHI_DATA_PATH'] ='/Users/romainquentin/Desktop/data/MEG_demarchi'
-os.environ['TEMP_DATA_DEMARCHI'] = '/Users/romainquentin/Desktop/data/MEG_demarchi'
-
 path_data = os.path.expandvars('$DEMARCHI_DATA_PATH') + '/MEG'
 path_results = os.path.expandvars('$DEMARCHI_DATA_PATH') + '/results'
 
@@ -23,10 +20,10 @@ path_results = os.path.expandvars('$DEMARCHI_DATA_PATH') + '/results'
 parser = argparse.ArgumentParser()
 
 # Add the arguments to the parser
-parser.add_argument("--subject", type=int, default =-1, required=True)
+parser.add_argument('-s',"--subject", type=int, default =-1, required=True, help='subject index (zero-based integer)')
+parser.add_argument("--nfolds", type=int, default=5, help='num CV folds')
+parser.add_argument("--force_refilt", type=int, default=0, help='force recalc of filtered raws')
 parser.add_argument("--extract_filters_patterns", type=int, default =1)
-parser.add_argument("--nfolds", type=int, default=5)
-parser.add_argument("--force_refilt", type=int, default=0)
 parser.add_argument("--shuffle_cv", type=int, default=0)
 parser.add_argument("--exit_after", type=str, default='end')
 
@@ -116,7 +113,8 @@ for g,inds in grp.groups.items():
     else:
         print('!!!!!   (Re)compute filtered raws from ',p0)
         for cond,condcode in cond2code.items():
-            fnf = op.join(path_data, subdf.to_dict('index')[cond]['path'] )
+            
+            fnf = op.join(path_data, subdf.loc[cond,'path'] )
             # Read raw file
             raw = mne.io.read_raw_fif(fnf, preload=True)
             print(f'Filtering raw {fnf}')
