@@ -102,12 +102,12 @@ def reorder(random_events, events, raw_rd, del_processed = True,
     first_samp = raw_rd.first_samp
     # keep the original trial numbers in the random (for correct cross-validation and also comparison with the same not-reordered random trials)
     #random_events_processed = []
-    orig_nums = list() # (roughly) permutation of the original random event indices
+    orig_inds = list() # (roughly) permutation of the original random event indices
     new_sample += dur # sample where we will put the random event
 
     # Romain's version
     if del_processed:
-        random_events_numbers = np.arange(len(random_events)) # indices of random events
+        random_events_indices = np.arange(len(random_events)) # indices of random events
         #for event in tqdm(events):
         for event in events:
             # event[2] is the event code
@@ -119,13 +119,13 @@ def reorder(random_events, events, raw_rd, del_processed = True,
                 index = random_events[:, 2].tolist().index(event[2])
 
                 # save the index of the original (not reordered) random event 
-                orig_nums.append(random_events_numbers[index])
+                orig_inds.append(random_events_indices[index])
                 # correctly offsetted sample
                 samp = random_events[index, 0] - first_samp
                 raw_reord.append(raw_Xrd[:, samp:samp+nsamples])
 
-                random_events = np.delete(random_events, index, axis=0)
-                random_events_numbers = np.delete(random_events_numbers, index, axis=0)
+                random_events         = np.delete(random_events,         index, axis=0)
+                random_events_indices = np.delete(random_events_indices, index, axis=0)
 
                 # putting target event to the new sample
                 events_reord.append([new_sample, 0, event[2]])
@@ -147,7 +147,7 @@ def reorder(random_events, events, raw_rd, del_processed = True,
                 evt = random_events_aug_sub[inds[0]]
                 index = evt[3]  # index of random event in orig array
 
-                orig_nums.append(index)
+                orig_inds.append(index)
                 samp = evt[0] - first_samp
                 raw_reord.append(raw_Xrd[:, samp:samp+nsamples])
 
@@ -160,11 +160,11 @@ def reorder(random_events, events, raw_rd, del_processed = True,
     raw_reord.append(raw_Xrd[:, -dur:])  # end the reorderd random with the 2 last seconds of the random raw
 
     # will be used to define epochs_rd
-    orig_nums_reord = np.array(orig_nums)  
+    orig_inds_reord = np.array(orig_inds)  
     events_reord = np.array(events_reord)  
     # removing the first and last trials
     if cut_fl:
-        orig_nums_reord = orig_nums_reord[1:-1]
+        orig_inds_reord = orig_inds_reord[1:-1]
         events_reord    = events_reord[1:-1]
     raw_reord = np.concatenate(raw_reord, axis=1)
     raw_reord = mne.io.RawArray(raw_reord, raw_rd.info)
@@ -173,8 +173,8 @@ def reorder(random_events, events, raw_rd, del_processed = True,
          event_id=events_sound,
          tmin=tmin, tmax=tmax, baseline=None, preload=True)
 
-    assert len(set(orig_nums_reord)) > 4
-    return epochs_reord, orig_nums_reord
+    assert len(set(orig_inds_reord)) > 4
+    return epochs_reord, orig_inds_reord
 
 # for filter patterns extraction
 def getFiltPat(genclf):
@@ -225,3 +225,18 @@ def dadd(d,k,v):
         d[k] += [v]
     else:
         d[k] = [v]
+
+def addEpnumChan(epochs, inds):
+    assert inds.ndim == 1
+    inds = inds.reshape(-1,1)
+    preeps = np.repeat(inds[:,:,None], epochs._data.shape[2], axis=2)
+
+    # at every time point we put the epoch number
+    # use 'mag' as channel type so that no intemediate function kill this channel later
+    info3 = mne.create_info(epochs.info.ch_names + ['EPNUM'], epochs.info['sfreq'], 
+                            ch_types=epochs.get_channel_types() + ['mag'], verbose=None)
+    preeps_full = np.concatenate([epochs._data, preeps], axis=1)
+    eps_full = mne.EpochsArray(preeps_full, info3, tmin=0)
+    eps_full.events = epochs.events
+
+    return eps_full
