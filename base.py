@@ -226,7 +226,7 @@ def dadd(d,k,v):
     else:
         d[k] = [v]
 
-def addEpnumChan(epochs, inds):
+def addEpindChan(epochs, inds):
     assert inds.ndim == 1
     inds = inds.reshape(-1,1)
     preeps = np.repeat(inds[:,:,None], epochs._data.shape[2], axis=2)
@@ -240,3 +240,10 @@ def addEpnumChan(epochs, inds):
     eps_full.events = epochs.events
 
     return eps_full
+
+def addSampleindChan(raw):
+    index_info = mne.create_info(ch_names=['index_chan'], sfreq=raw.info['sfreq'], ch_types=['stim'])
+    index_data = np.arange(raw._data.shape[1]).reshape(1,-1)
+    index_raw = mne.io.RawArray(index_data, index_info)
+    raw.add_channels([index_raw], force_update_info=True)
+    return raw

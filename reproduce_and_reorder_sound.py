@@ -11,7 +11,8 @@ from sklearn.pipeline import make_pipeline
 from sklearn.model_selection import StratifiedKFold
 from collections import Counter
 
-from base import corresp, events_simple_pred, cond2code, events_omission, events_sound, reorder, getFiltPat, dadd
+from base import * 
+#corresp, events_simple_pred, cond2code, events_omission, events_sound, reorder, getFiltPat, dadd
 
 path_data = os.path.expandvars('$DEMARCHI_DATA_PATH') + '/MEG'
 path_results = os.path.expandvars('$DEMARCHI_DATA_PATH') + '/results'
@@ -27,7 +28,8 @@ parser.add_argument("--extract_filters_patterns", type=int, default =1)
 parser.add_argument("--shuffle_cv", type=int, default=0)
 parser.add_argument("--exit_after", type=str, default='end')
 parser.add_argument("--reord_narrow_test", type=int, default=0, help='restrict test to only reord events (currently not working, but also not necessary)')
-parser.add_argument("--add_epnum_channel", type=int, default=0, help='add channel with epoch index')
+parser.add_argument("--add_epind_channel", type=int, default=0, help='add channel with epoch index')
+parser.add_argument("--add_sampleind_channel", type=int, default=0, help='add channel with sample index to raw')
 parser.add_argument("--n_jobs", type=int, default=-1, help='number of jobs to run in parallel')
 
 # Parse the arguments
@@ -100,16 +102,28 @@ for g,inds in grp.groups.items():
         # keep only MEG channels
         raw_rd.pick_types(meg=True, eog=False, ecg=False,
                       ias=False, stim=False, syst=False)
+        if args.add_sampleind_channel:
+            raw_rd = addSampleindChan(raw_rd)
 
         # actually read epochs and filtered raws
         for cond,condcode in cond2code.items():
             s = condcode
-            cond2epochs[cond] = mne.read_epochs( op.join(p0, f'flt_{s}-epo.fif')) 
-
             raw_ = mne.io.read_raw_fif(op.join(p0,f'flt_{s}-raw.fif'), preload=True) 
+            if args.add_sampleind_channel: 
+                events = mne.find_events(raw_, shortest_event=1)
             # keep only MEG channels
             raw_.pick_types(meg=True, eog=False, ecg=False,
                           ias=False, stim=False, syst=False)
+
+            if not args.add_sampleind_channel: 
+                cond2epochs[cond] = mne.read_epochs( op.join(p0, f'flt_{s}-epo.fif')) 
+            else:
+                raw_ = addSampleindChan(raw_)
+                epochs = mne.Epochs(raw_, events,
+                                    event_id=events_all,
+                                    tmin=tmin, tmax=tmax, baseline=None, preload=True)
+                cond2epochs[cond] = epochs
+
             cond2raw[cond] = raw_
 
     else:
@@ -129,6 +143,8 @@ for g,inds in grp.groups.items():
             # keep only MEG channels
             raw.pick_types(meg=True, eog=False, ecg=False,
                           ias=False, stim=False, syst=False)
+            if args.add_sampleind_channel: 
+                raw = addSampleindChan(raw)
             cond2raw[cond] = raw
 
             # Create epochs
@@ -141,26 +157,12 @@ for g,inds in grp.groups.items():
         raw_or = cond2raw['ordered']
         raw_rd = cond2raw['random']
 
-    from base import addEpnumChan
-    if args.add_epnum_channel:
+    if args.add_epind_channel:
         for cond,epochs in cond2epochs.items():
-            print('Adding epnum channel to ',cond)
-
-            #inds = np.arange(len(epochs)).reshape(-1,1)
-            #preeps = np.repeat(inds[:,:,None], epochs._data.shape[2], axis=2)
-            #info2 = mne.create_info(['EPNUM'], epochs.info['sfreq'], 
-            #                       ch_types=['mag'], verbose=None)
-            #eps = mne.EpochsArray(preeps, info2, tmin=0)
-            #epochs_ext = epochs.add_channels([eps])
-            #cond2epochs[cond] = epochs_ext
+            print('Adding epind channel to ',cond)
 
             # at every time point we put the epoch number
-            eps_full = addEpnumChan(epochs, np.arange(len(epochs)) )
-            #info3 = mne.create_info(epochs.info.ch_names + ['EPNUM'], epochs.info['sfreq'], 
-            #                       ch_types=epochs.get_channel_types() + ['mag'], verbose=None)
-            #preeps_full = np.concatenate([epochs._data, preeps], axis=1)
-            #eps_full = mne.EpochsArray(preeps_full, info3, tmin=0)
-            #eps_full.events = epochs.events
+            eps_full = addEpindChan(epochs, np.arange(len(epochs)) )
 
             cond2epochs[cond] = eps_full
 
@@ -208,8 +210,8 @@ for g,inds in grp.groups.items():
         
         # reorder random events to another entropy condition
         epochs_reord0, orig_inds_reord0 = reorder(random_events, events0, raw_rd, **reorder_pars) 
-        if args.add_epnum_channel:
-            epochs_reord_ext0 = addEpnumChan(epochs_reord0, orig_inds_reord0 )
+        if args.add_epind_channel:
+            epochs_reord_ext0 = addEpindChan(epochs_reord0, orig_inds_reord0 )
             cond2epochs_reord[cond] = epochs_reord_ext0
         else:
             cond2epochs_reord[cond] = epochs_reord0
@@ -226,8 +228,8 @@ for g,inds in grp.groups.items():
         # then we do the reorderig like before, but in this case the target events are the transformed events, not the true ones
         epochs_reord, orig_inds_reord = reorder(random_events, events, raw_rd, **reorder_pars) 
 
-        if args.add_epnum_channel:
-            epochs_reord_ext = addEpnumChan(epochs_reord, orig_inds_reord )
+        if args.add_epind_channel:
+            epochs_reord_ext = addEpindChan(epochs_reord, orig_inds_reord )
             cond2epochs_sp_reord[cond] = epochs_reord_ext
         else:
             cond2epochs_sp_reord[cond] = epochs_reord
@@ -320,12 +322,22 @@ for g,inds in grp.groups.items():
             print(f"##############  Starting {cond} fold")
             print('Lens of train and test are :',len(train_rd), len(test_rd) )
 
-            epinds_train  = Xreord[train_rd][:,-1,0].astype(int)
-            epinds_test   = Xreord[test_rd][:,-1,0].astype(int)
+            ind_dim_epind = -1
+            epinds_train  = Xreord[train_rd][:,ind_dim_epind,0].astype(int)
+            epinds_test   = Xreord[test_rd][:,ind_dim_epind,0].astype(int)
             print(Xreord.shape, epinds_train.shape, epinds_test.shape)
             print('intersection size epinds_train and epinds_test = ', 
                   len(set(epinds_train) & set(epinds_test) ) ) # equal to 0
 
+            if args.add_epind_channel:
+                ind_dim_sampleind = -2
+            else:
+                ind_dim_sampleind = -1
+            sampleinds_train = Xreord[train_rd][:,ind_dim_sampleind,:].astype(int)
+            sampleinds_test  = Xreord[test_rd][:,ind_dim_sampleind,:].astype(int)
+            inum = len(set(sampleinds_train.flatten()) & set(sampleinds_test.flatten() ) )
+            tnum = len(set(sampleinds_test.flatten()) )
+            print(f'intersection size sampleinds_train and sampleinds_test = {inum} = {100* inum/tnum:.2f}% of test indices ') 
             # Run cross validation for the ordered (and reorder-order) (and keep the score on the random too only here)
             # Train and test with cross-validation
             clf.fit(Xrd1[train_rd], yrd1[train_rd])  # fit on random
