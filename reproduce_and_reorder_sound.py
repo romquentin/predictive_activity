@@ -1,3 +1,4 @@
+# %%
 import os.path as op
 import os, sys
 import numpy as np
@@ -30,7 +31,10 @@ parser.add_argument("--exit_after", type=str, default='end')
 parser.add_argument("--reord_narrow_test", type=int, default=0, help='restrict test to only reord events (currently not working, but also not necessary)')
 parser.add_argument("--add_epind_channel", type=int, default=0, help='add channel with epoch index')
 parser.add_argument("--add_sampleind_channel", type=int, default=0, help='add channel with sample index to raw')
+parser.add_argument("--tmin", type=str, default="-0.7", help='tmin as string (need quotes)')
+parser.add_argument("--tmax", type=str, default="0.7", help='tmax as string')
 parser.add_argument("--n_jobs", type=int, default=-1, help='number of jobs to run in parallel')
+parser.add_argument("--save_suffix_scores", type=str, default="", help='suffix to add to the save filenames')
 
 # Parse the arguments
 args = parser.parse_args()
@@ -41,8 +45,10 @@ nfolds = args.nfolds
 force_refilt = args.force_refilt
 shuffle_cv = bool(args.shuffle_cv)
 
+# %%
 # define tmin and tmax
-tmin, tmax = -0.7, 0.7
+#tmin, tmax = -0.7, 0.7
+tmin, tmax = float(args.tmin[1:-1]), float(args.tmax[1:-1])
 events_all = events_sound + events_omission # event_ids to be used to select events with MNE
 del_processed = 1  # determines the version of the reordering algorithm. Currently only = 1 works
 cut_fl = 0 # whether we cut out first and last events from the final result           
@@ -68,6 +74,7 @@ grp = df.groupby(['subj'])
 assert grp.size().min() == grp.size().max()
 assert grp.size().min() == 4
 
+# %%
 # iterating over subjects (if we selected one, then process one subject)
 for g,inds in grp.groups.items():
     subdf = df.loc[inds]
@@ -322,24 +329,34 @@ for g,inds in grp.groups.items():
             print(f"##############  Starting {cond} fold")
             print('Lens of train and test are :',len(train_rd), len(test_rd) )
 
-            ind_dim_epind = -1
-            epinds_train  = Xreord[train_rd][:,ind_dim_epind,0].astype(int)
-            epinds_test   = Xreord[test_rd][:,ind_dim_epind,0].astype(int)
-            print(Xreord.shape, epinds_train.shape, epinds_test.shape)
-            print('intersection size epinds_train and epinds_test = ', 
-                  len(set(epinds_train) & set(epinds_test) ) ) # equal to 0
-
+            valchans = np.arange(Xrd1.shape[1])
             if args.add_epind_channel:
-                ind_dim_sampleind = -2
-            else:
-                ind_dim_sampleind = -1
-            sampleinds_train = Xreord[train_rd][:,ind_dim_sampleind,:].astype(int)
-            sampleinds_test  = Xreord[test_rd][:,ind_dim_sampleind,:].astype(int)
-            inum = len(set(sampleinds_train.flatten()) & set(sampleinds_test.flatten() ) )
-            tnum = len(set(sampleinds_test.flatten()) )
-            print(f'intersection size sampleinds_train and sampleinds_test = {inum} = {100* inum/tnum:.2f}% of test indices ') 
+                ind_dim_epind = -1
+                epinds_train  = Xreord[train_rd][:,ind_dim_epind,0].astype(int)
+                epinds_test   = Xreord[test_rd][:,ind_dim_epind,0].astype(int)
+                print(Xreord.shape, epinds_train.shape, epinds_test.shape)
+                print('intersection size epinds_train and epinds_test = ', 
+                    len(set(epinds_train) & set(epinds_test) ) ) # equal to 0
+                valchans = valchans[:-1]
+
+            if args.add_sampleind_channel:
+                if args.add_epind_channel:
+                    ind_dim_sampleind = -2
+                else:
+                    ind_dim_sampleind = -1
+                sampleinds_train = Xreord[train_rd][:,ind_dim_sampleind,:].astype(int)
+                sampleinds_test  = Xreord[test_rd][:,ind_dim_sampleind,:].astype(int)
+                inum = len(set(sampleinds_train.flatten()) & set(sampleinds_test.flatten() ) )
+                tnum = len(set(sampleinds_test.flatten()) )
+                print(f'intersection size sampleinds_train and sampleinds_test = {inum} = {100* inum/tnum:.2f}% of test indices ') 
+                valchans = valchans[:-1]
             # Run cross validation for the ordered (and reorder-order) (and keep the score on the random too only here)
             # Train and test with cross-validation
+            Xrd1   = Xrd1[:,valchans,:]
+            X      = X[:,valchans,:]
+            Xreord = Xreord[:,valchans,:]
+            #print(f'{Xrd1.shape=}, {X.shape=}, {Xreord.shape=}')
+
             clf.fit(Xrd1[train_rd], yrd1[train_rd])  # fit on random
 
             # to plot patterns later... not very useful in the end, they are too inconsistent
@@ -428,7 +445,7 @@ for g,inds in grp.groups.items():
         # save everything
         for k,v in scores.items():
             scores[k] = np.array(v)
-            fnf = op.join(results_folder, f'cv_{k}_scores.npy' )
+            fnf = op.join(results_folder, f'cv_{k}_scores{args.save_suffix_scores}.npy' )
             print('Saving ',fnf)
             np.save(fnf , v )
 
