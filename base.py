@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 import mne
+from numba import jit
 
 # fixed ordering os subject ids, for convenience
 canon_subj_order =  ['19830114RFTM', '19921111BRHC', '19930630MNSU', '19930118IMSH',
@@ -247,3 +248,17 @@ def addSampleindChan(raw):
     index_raw = mne.io.RawArray(index_data, index_info)
     raw.add_channels([index_raw], force_update_info=True)
     return raw
+
+@jit(nopython=True)
+def calc_leackage_sampleinds(train_inds, test_inds, verbose=0):
+    m = np.ones( (train_inds.shape[0], test_inds.shape[0] ) ) 
+    for epi in range( train_inds.shape[0] ):
+        train_sample_inds_curep = train_inds[epi,:]
+        for epj in range( test_inds.shape[0] ):
+            test_sample_inds_curep  = test_inds[epj,:]
+            n = np.intersect1d(train_sample_inds_curep, test_sample_inds_curep)
+            m[epi,epj] = len(n)
+        if verbose:
+            print('calc_leackage_sampleinds', epi, len(n) )
+
+    return m
