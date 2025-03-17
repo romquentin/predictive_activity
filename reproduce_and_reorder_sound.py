@@ -17,6 +17,12 @@ from base import *
 path_data = os.path.expandvars('$DEMARCHI_DATA_PATH') + '/MEG'
 path_results = os.path.expandvars('$DEMARCHI_DATA_PATH') + '/results'
 
+###  for debug only
+# print(sys.argv)
+# sys.argv = sys.argv[:1] + [ "-s", "1", "--add_epind_channel=1", "--add_sampleind_channel=1", 
+#             "--n_jobs=1", "--tmin=\"-0.32\"", "--tmax=\"0.\"",
+#               "--save_suffix_scores=only_pre_window", "--leakage_report_only=1","--nfolds=2"]
+
 # Create an ArgumentParser object
 parser = argparse.ArgumentParser()
 
@@ -58,6 +64,7 @@ cut_fl = 0 # whether we cut out first and last events from the final result
 gen_est_verbose = False # def True, argument of GeneralizingEstimator
 dur = 200 # duration (in samples) of pre-task and post-task data  
 nsamples = 33 # trial duration in samples
+max_num_epochs_per_cond = 5000 
 
 
 # parse directory names from the data directory
@@ -94,6 +101,8 @@ print(meg_rd, meg_or)
 ps = [p[:12] for p in [meg_rd, meg_or] ]
 assert len(set(ps) ) == 1
 
+p0 = op.join( os.path.expandvars('$TEMP_DATA_DEMARCHI') , meg_rd[:-15] )
+
 participant = meg_or[:12]
 print('------------------------------------------------------')
 print('---------------------- Starting participant', participant)
@@ -102,71 +111,10 @@ results_folder = op.join(path_results, participant, 'reorder_random')
 if not os.path.exists(results_folder):
     os.makedirs(results_folder)
 
-cond2epochs = {}
-cond2raw   = {}
-
 # load or recalc filtered epochs
-p0 = op.join( os.path.expandvars('$TEMP_DATA_DEMARCHI') , meg_rd[:-15] )
-if op.exists(op.join(p0, 'flt_rd-epo.fif')) and (not force_refilt):
-    print('!!!!!   Loading precomputed filtered raws and epochs from ',p0)
-    raw_rd = mne.io.read_raw_fif(op.join(p0,'flt_rd-raw.fif'), preload=True)
-    # keep only MEG channels
-    raw_rd.pick_types(meg=True, eog=False, ecg=False,
-                    ias=False, stim=False, syst=False)
-    if args.add_sampleind_channel:
-        raw_rd = addSampleindChan(raw_rd)
-
-    # actually read epochs and filtered raws
-    for cond,condcode in cond2code.items():
-        s = condcode
-        raw_ = mne.io.read_raw_fif(op.join(p0,f'flt_{s}-raw.fif'), preload=True) 
-        if args.add_sampleind_channel: 
-            events = mne.find_events(raw_, shortest_event=1)
-        # keep only MEG channels
-        raw_.pick_types(meg=True, eog=False, ecg=False,
-                        ias=False, stim=False, syst=False)
-
-        if not args.add_sampleind_channel: 
-            cond2epochs[cond] = mne.read_epochs( op.join(p0, f'flt_{s}-epo.fif')) 
-        else:
-            raw_ = addSampleindChan(raw_)
-            epochs = mne.Epochs(raw_, events,
-                                event_id=events_all,
-                                tmin=tmin, tmax=tmax, baseline=None, preload=True)
-            cond2epochs[cond] = epochs
-
-        cond2raw[cond] = raw_
-
-else:
-    print('!!!!!   (Re)compute filtered raws from ',p0)
-    for cond,condcode in cond2code.items():
-        
-        fnf = op.join(path_data, subdf.loc[cond,'path'] )
-        # Read raw file
-        raw = mne.io.read_raw_fif(fnf, preload=True)
-        print(f'Filtering raw {fnf}')
-        raw.filter(0.1, 30, n_jobs=args.n_jobs)
-        if not op.exists(p0):
-            os.makedirs(p0)
-        raw.save( op.join(p0, f'flt_{condcode}-raw.fif'), overwrite = True )
-        # Get events
-        events = mne.find_events(raw, shortest_event=1)
-        # keep only MEG channels
-        raw.pick_types(meg=True, eog=False, ecg=False,
-                        ias=False, stim=False, syst=False)
-        if args.add_sampleind_channel: 
-            raw = addSampleindChan(raw)
-        cond2raw[cond] = raw
-
-        # Create epochs
-        epochs = mne.Epochs(raw, events,
-                            event_id=events_all,
-                            tmin=tmin, tmax=tmax, baseline=None, preload=True)
-        epochs.save( op.join(p0, f'flt_{condcode}-epo.fif'), overwrite=True)
-        cond2epochs[cond] = epochs
-
-    raw_or = cond2raw['ordered']
-    raw_rd = cond2raw['random']
+cond2epochs, cond2raw   = read_raws(p0,force_refilt, tmin, tmax, 
+        max_num_epochs_per_cond, args.add_sampleind_channel, subdf, path_data, events_all, args.n_jobs)
+raw_random = cond2raw['random'] # raw_rd is used for reorder later
 
 if args.add_epind_channel:
     for cond,epochs in cond2epochs.items():
@@ -195,15 +143,14 @@ for cond,epochs in cond2epochs.items():
         om_fo = np.delete(om_fo, -1)
     # remove these indices from random epochs
     cond2epochs[cond] = epochs.drop(om_fo)
-
     cond2counts[cond] = Counter(cond2epochs[cond].events[:,2])
-
 
 ################################################################
 # reorder random as ...
 ################################################################
+# %%
 
-epochs_rd_init = cond2epochs['random'].copy()
+epochs_random_init = cond2epochs['random'].copy()
 
 cond2epochs_reord = {}
 cond2orig_inds_reord = {}
@@ -211,16 +158,17 @@ cond2orig_inds_reord = {}
 cond2epochs_sp_reord = {}
 cond2orig_inds_sp_reord = {}
 
-reorder_pars = dict(del_processed= del_processed, cut_fl=cut_fl, tmin=tmin, tmax=tmax, dur=dur, nsamples=nsamples)
+reorder_pars = dict(del_processed= del_processed, cut_fl=cut_fl, 
+    tmin=tmin, tmax=tmax, dur=dur, nsamples=nsamples)
 # cycle over four entropy conditions (targets of reordering)
 for cond,epochs in cond2epochs.items():
     # original random events
-    random_events = epochs_rd_init.events.copy()
+    random_events = epochs_random_init.events.copy()
     # target events
     events0 = epochs.events.copy()
     
     # reorder random events to another entropy condition
-    epochs_reord0, orig_inds_reord0 = reorder(random_events, events0, raw_rd, **reorder_pars) 
+    epochs_reord0, orig_inds_reord0 = reorder(random_events, events0, raw_random, **reorder_pars) 
     if args.add_epind_channel:
         epochs_reord_ext0 = addEpindChan(epochs_reord0, orig_inds_reord0 )
         cond2epochs_reord[cond] = epochs_reord_ext0
@@ -237,7 +185,7 @@ for cond,epochs in cond2epochs.items():
     # first we transform events from the current entropy condtion into it's "simple prediction" (most probable next event) verion 
     events = events_simple_pred(epochs.events.copy(), cond2code[cond])
     # then we do the reorderig like before, but in this case the target events are the transformed events, not the true ones
-    epochs_reord, orig_inds_reord = reorder(random_events, events, raw_rd, **reorder_pars) 
+    epochs_reord, orig_inds_reord = reorder(random_events, events, raw_random, **reorder_pars) 
 
     if args.add_epind_channel:
         epochs_reord_ext = addEpindChan(epochs_reord, orig_inds_reord )
@@ -282,16 +230,18 @@ else:
 clf = GeneralizingEstimator(clf, n_jobs=args.n_jobs, scoring='accuracy', verbose=gen_est_verbose)
 
 cond2ms={}
+
+# %%
 # cycle over entropies
 for cond,epochs in cond2epochs.items():
     print(f"-----  CV for {cond}")
-    cond2ms[cond] = []
+    cond2ms[cond] = []  # condition 2 leakage table
 
     # keep only the same number of trials for all conditions
     epochs = epochs[:minl]  
     # get the X and Y for each condition in numpy array
-    X = epochs.get_data()
-    y_sp_ = events_simple_pred(epochs.events.copy() , cond2code[cond])
+    X = epochs.get_data() # for the given condition
+    y_sp_ = events_simple_pred(epochs.events.copy() , cond2code[cond]) # not reordered
     y_sp = y_sp_[:, 2] 
 
     #----------
@@ -300,7 +250,7 @@ for cond,epochs in cond2epochs.items():
     # TODO: find way to use both sp and not sp, reord and not
 
     # keep same trials in epochs_rd and epochs_reord
-    epochs_rd1 = epochs_rd_init[orig_inds_reord][:minl]
+    epochs_rd1 = epochs_random_init[orig_inds_reord][:minl]
     Xrd1 = epochs_rd1.get_data()
     yrd1 = epochs_rd1.events[:, 2]
 
@@ -361,7 +311,7 @@ for cond,epochs in cond2epochs.items():
             m = calc_leackage_sampleinds(train_sample_inds, test_sample_inds, verbose=0)
             cond2ms[cond] += [(m,len(test_sample_inds) )]        
 
-            print('max={}, sum={}, pct={}%\n'.format(np.max(m), np.sum(m), np.sum(m)*100/len(test_sample_inds) ) )#, np.where(m > 0) )
+            print('max={}, sum={}, pct={:.3f}%\n'.format(np.max(m), np.sum(m), np.sum(m)*100/len(test_sample_inds) ) )#, np.where(m > 0) )
 
         if args.leakage_report_only:
             continue
@@ -411,10 +361,11 @@ for cond,epochs in cond2epochs.items():
         #'cv'
     filters_rd,patterns_rd = np.array(filters), np.array(patterns)
 
+    m = None
     for cond,ms in cond2ms.items():
         for foldi,(m,l) in enumerate(ms):
             ll = l * Xreord.shape[-1]
-            print(cond,foldi,'max={}, sum={}, pct={:.1f}%'.format(np.max(m), np.sum(m), np.sum(m)*100/ll ) )
+            print('-- ', cond,foldi,'max={}, sum={}, pct={:.1f}%'.format(np.max(m), np.sum(m), np.sum(m)*100/ll ) )
     if args.leakage_report_only:
         continue
 
@@ -473,12 +424,21 @@ for cond,epochs in cond2epochs.items():
     # clean
     import gc; gc.collect()
 
-
+# %%
+cond2avpct = {}
 for cond,ms in cond2ms.items():
+    cond2avpct[cond] = 0.
     for foldi,(m,l) in enumerate(ms):
         ll = l * Xreord.shape[-1]
-        print(cond,foldi,'max={}, sum={}, pct={:.2f}%'.format(np.max(m), np.sum(m), np.sum(m)*100/ll ) )
+        pct = np.sum(m)*100/ll 
+        print(cond,foldi,'max={}, sum={}, pct={:.2f}%'.format(np.max(m), np.sum(m), pct ) )
+        cond2avpct[cond] += pct / len(ms)
+
+for cond,ms in cond2ms.items():
+    print(cond,'avpct={:.2f}%'.format(cond2avpct[cond] ) )
 
 fnf = op.join(results_folder, f'leakage_{args.save_suffix_scores}.npz' )
 print('Saving ',fnf)
 np.save(fnf , cond2ms )
+
+# %%

@@ -1,4 +1,5 @@
 import numpy as np
+import os.path as op
 import pandas as pd
 import seaborn as sns
 import mne
@@ -242,9 +243,9 @@ def addEpindChan(epochs, inds):
 
     return eps_full
 
-def addSampleindChan(raw):
+def addSampleindChan(raw, shift_ind):
     index_info = mne.create_info(ch_names=['index_chan'], sfreq=raw.info['sfreq'], ch_types=['stim'])
-    index_data = np.arange(raw._data.shape[1]).reshape(1,-1)
+    index_data = shift_ind + np.arange(raw._data.shape[1]).reshape(1,-1)
     index_raw = mne.io.RawArray(index_data, index_info)
     raw.add_channels([index_raw], force_update_info=True)
     return raw
@@ -262,3 +263,76 @@ def calc_leackage_sampleinds(train_inds, test_inds, verbose=0):
             print('calc_leackage_sampleinds', epi, len(n) )
 
     return m
+
+
+def read_raws(p0, force_refilt, tmin, tmax, max_num_epochs_per_cond, add_sampleind_channel, subdf, path_data, events_all, n_jobs):
+    import os
+    cond2epochs = {}
+    cond2raw   = {}
+    if op.exists(op.join(p0, 'flt_rd-epo.fif')) and (not force_refilt):
+        print('!!!!!   Loading precomputed filtered raws and epochs from ',p0)
+        ## raw_rd is used for reorder later
+        #raw_rd = mne.io.read_raw_fif(op.join(p0,'flt_rd-raw.fif'), preload=True)
+        ## keep only MEG channels
+        #raw_rd.pick_types(meg=True, eog=False, ecg=False,
+        #                ias=False, stim=False, syst=False)
+        #if args.add_sampleind_channel:
+        #    raw_rd = addSampleindChan(raw_rd)
+
+        # actually read epochs and filtered raws
+        shift_timbin_ind_cur = 0.
+        for cond,condcode in cond2code.items():
+            s = condcode
+            raw_ = mne.io.read_raw_fif(op.join(p0,f'flt_{s}-raw.fif'), preload=True) 
+            shift_timebin_ind = max_num_epochs_per_cond * ( raw_.info['sfreq'] * (tmax - tmin) + 2)
+            if add_sampleind_channel: 
+                events = mne.find_events(raw_, shortest_event=1)
+            # keep only MEG channels
+            raw_.pick_types(meg=True, eog=False, ecg=False,
+                            ias=False, stim=False, syst=False)
+
+            if not add_sampleind_channel: 
+                cond2epochs[cond] = mne.read_epochs( op.join(p0, f'flt_{s}-epo.fif')) 
+            else:
+                shift_timbin_ind_cur += shift_timebin_ind
+                raw_ = addSampleindChan(raw_, shift_timbin_ind_cur)
+                epochs = mne.Epochs(raw_, events,
+                                    event_id=events_all,
+                                    tmin=tmin, tmax=tmax, baseline=None, preload=True)
+                cond2epochs[cond] = epochs
+
+            cond2raw[cond] = raw_
+
+    else:
+        print('!!!!!   (Re)compute filtered raws from ',p0)
+        shift_timbin_ind_cur = 0.
+        for cond,condcode in cond2code.items():
+            
+            fnf = op.join(path_data, subdf.loc[cond,'path'] )
+            # Read raw file
+            raw = mne.io.read_raw_fif(fnf, preload=True)
+            shift_timebin_ind = max_num_epochs_per_cond * ( raw.info['sfreq'] * (tmax - tmin) + 2)
+            print(f'Filtering raw {fnf}')
+            raw.filter(0.1, 30, n_jobs=n_jobs)
+            if not op.exists(p0):
+                os.makedirs(p0)
+            raw.save( op.join(p0, f'flt_{condcode}-raw.fif'), overwrite = True )
+            # Get events
+            events = mne.find_events(raw, shortest_event=1)
+            # keep only MEG channels
+            raw.pick_types(meg=True, eog=False, ecg=False,
+                            ias=False, stim=False, syst=False)
+            if add_sampleind_channel: 
+                shift_timbin_ind_cur += shift_timebin_ind
+                raw = addSampleindChan(raw, shift_timbin_ind_cur)
+            cond2raw[cond] = raw
+
+            # make sure timebin indices are unique
+
+            # Create epochs
+            epochs = mne.Epochs(raw, events,
+                                event_id=events_all,
+                                tmin=tmin, tmax=tmax, baseline=None, preload=True)
+            epochs.save( op.join(p0, f'flt_{condcode}-epo.fif'), overwrite=True)
+            cond2epochs[cond] = epochs
+    return cond2epochs, cond2raw
