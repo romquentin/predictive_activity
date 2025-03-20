@@ -77,7 +77,7 @@ def events_simple_pred(events, Mtype):
 
 
 def reorder(random_events, events, raw_rd, del_processed = True,
-        cut_fl = 0, dur=200, nsamples = 33, tmin=-0.7, tmax=0.7):
+        cut_fl = 0, dur=200, nsamples = 33, tmin=-0.7, tmax=0.7, double_dist=False):
     events = list(events)
     '''
     random events,
@@ -108,7 +108,7 @@ def reorder(random_events, events, raw_rd, del_processed = True,
     new_sample += dur # sample where we will put the random event
 
     # Romain's version
-    if del_processed:
+    if del_processed and (not double_dist):
         random_events_indices = np.arange(len(random_events)) # indices of random events
         #for event in tqdm(events):
         for event in events:
@@ -119,6 +119,37 @@ def reorder(random_events, events, raw_rd, del_processed = True,
                 # take the index of the ordered event as it is present in random events (need to delete it later)
                 # index of first not processed with save code
                 index = random_events[:, 2].tolist().index(event[2])
+
+                # save the index of the original (not reordered) random event 
+                orig_inds.append(random_events_indices[index])
+                # correctly offsetted sample
+                samp = random_events[index, 0] - first_samp
+                raw_reord.append(raw_Xrd[:, samp:samp+nsamples])
+
+                random_events         = np.delete(random_events,         index, axis=0)
+                random_events_indices = np.delete(random_events_indices, index, axis=0)
+
+                # putting target event to the new sample
+                events_reord.append([new_sample, 0, event[2]])
+                new_sample += nsamples
+            else:
+                pass
+    elif del_processed and (double_dist):
+        raise ValueError('not implemented!')
+        random_events_indices = np.arange(len(random_events)) # indices of random events
+        #for event in tqdm(events):
+        for event in events:
+            # event[2] is the event code
+            # note that random_events changes on every iteration potentially
+            # random events is actually _yet unprocessed_ random events
+            inds = np.where( random_events[:, 2] == event[2] )[0]
+            if len(inds) > 2:
+            #if event[2] in random_events[:, 2]:
+                # take the index of the ordered event as it is present in random events (need to delete it later)
+                # index of first not processed with save code
+                
+                #index = random_events[:, 2].tolist().index(event[2])
+                index = inds[1] # not the very first one, next one!
 
                 # save the index of the original (not reordered) random event 
                 orig_inds.append(random_events_indices[index])

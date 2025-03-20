@@ -18,26 +18,32 @@ path_data = os.path.expandvars('$DEMARCHI_DATA_PATH') + '/MEG'
 path_results = os.path.expandvars('$DEMARCHI_DATA_PATH') + '/results'
 
 ###  for debug only
-# print(sys.argv)
-# sys.argv = sys.argv[:1] + [ "-s", "1", "--add_epind_channel=1", "--add_sampleind_channel=1", 
-#             "--n_jobs=1", "--tmin=\"-0.32\"", "--tmax=\"0.\"",
-#               "--save_suffix_scores=only_pre_window", "--leakage_report_only=1","--nfolds=2"]
+print(sys.argv)
+# -0.33
+# sys.argv = sys.argv[:1] + [ "-s", "4", "--add_epind_channel=1", "--add_sampleind_channel=1", 
+#             "--n_jobs=1", "--tmin=\"-0.33\"", "--tmax=\"0.33\"",
+#               "--save_suffix_scores=only_pre_window", "--leakage_report_only=0","--nfolds=2",
+#                           "--shift_orig_inds=-1", "--remove_leak_folds=1"]\
+#--tmin=\"-0.33\" --tmax=\"0.33\" --add_epind_channel=1 --add_sampleind_channel=1 --remove_leak_folds=1 --save_suffix_scores=small_window -s 0
 
 # Create an ArgumentParser object
 parser = argparse.ArgumentParser()
 
+# tmin,tmax=-0.7,0.7
 # Add the arguments to the parser
 parser.add_argument('-s',"--subject", type=int, default =-1, required=True, help='subject index (zero-based integer)')
 parser.add_argument("--nfolds", type=int, default=5, help='num CV folds')
 parser.add_argument("--force_refilt", type=int, default=0, help='force recalc of filtered raws')
-parser.add_argument("--extract_filters_patterns", type=int, default =1)
+parser.add_argument("--extract_filters_patterns", type=int, default =0)
 parser.add_argument("--shuffle_cv", type=int, default=0)
+parser.add_argument("--shift_orig_inds", type=int, default=0)
+parser.add_argument("--remove_leak_folds", type=int, default=1)
 parser.add_argument("--exit_after", type=str, default='end')
 parser.add_argument("--reord_narrow_test", type=int, default=0, help='restrict test to only reord events (currently not working, but also not necessary)')
-parser.add_argument("--add_epind_channel", type=int, default=0, help='add channel with epoch index')
-parser.add_argument("--add_sampleind_channel", type=int, default=0, help='add channel with sample index to raw')
-parser.add_argument("--tmin", type=str, default="-0.7", help='tmin as string (need quotes)')
-parser.add_argument("--tmax", type=str, default="0.7", help='tmax as string')
+parser.add_argument("--add_epind_channel", type=int, default=1, help='add channel with epoch index')
+parser.add_argument("--add_sampleind_channel", type=int, default=1, help='add channel with sample index to raw')
+parser.add_argument("--tmin", type=str, default="-0.33", help='tmin as string (need quotes)')
+parser.add_argument("--tmax", type=str, default="0.33", help='tmax as string')
 parser.add_argument("--n_jobs", type=int, default=-1, help='number of jobs to run in parallel')
 parser.add_argument("--save_suffix_scores", type=str, default="", help='suffix to add to the save filenames')
 parser.add_argument("--leakage_report_only", type=int, default=0, help='only report leakage, do not run the decoding')
@@ -54,9 +60,18 @@ shuffle_cv = bool(args.shuffle_cv)
 # %%
 # define tmin and tmax
 #tmin, tmax = -0.7, 0.7
-assert args.tmin[0] == '"' and args.tmax[0] == '"'
-assert args.tmin[-1] == '"' and args.tmax[-1] == '"'
-tmin, tmax = float(args.tmin[1:-1]), float(args.tmax[1:-1])
+
+tmin,tmax = args.tmin,args.tmax
+if tmin[0]  == '"':
+    assert tmin[-1] == '"'
+    tmin = tmin[1:-1]
+if args.tmax[0]  == '"':
+    assert tmax[-1] == '"'
+    tmax = tmax[1:-1]
+tmin,tmax= float(tmin),float(tmax)
+#assert args.tmin[0] == '"' and args.tmax[0] == '"'
+#assert args.tmin[-1] == '"' and args.tmax[-1] == '"'
+
 events_all = events_sound + events_omission # event_ids to be used to select events with MNE
 del_processed = 1  # determines the version of the reordering algorithm. Currently only = 1 works
 cut_fl = 0 # whether we cut out first and last events from the final result           
@@ -241,12 +256,13 @@ for cond,epochs in cond2epochs.items():
     epochs = epochs[:minl]  
     # get the X and Y for each condition in numpy array
     X = epochs.get_data() # for the given condition
+
     y_sp_ = events_simple_pred(epochs.events.copy() , cond2code[cond]) # not reordered
     y_sp = y_sp_[:, 2] 
 
     #----------
     epochs_reord = cond2epochs_reord[cond][:minl]
-    orig_inds_reord = cond2orig_inds_reord[cond] 
+    orig_inds_reord = cond2orig_inds_reord[cond] + args.shift_orig_inds # here we shift the indices of random events
     # TODO: find way to use both sp and not sp, reord and not
 
     # keep same trials in epochs_rd and epochs_reord
@@ -265,6 +281,8 @@ for cond,epochs in cond2epochs.items():
     y0 = y0_[:, 2] 
 
     Xreord = epochs_reord.get_data()[:minl]
+
+    # simple prediction after reordering
     yreord_ = epochs_reord.events
     yreord = yreord_[:, 2]
     yreord_sp = events_simple_pred(yreord_, cond2code[cond])[:, 2]
@@ -279,39 +297,39 @@ for cond,epochs in cond2epochs.items():
 
     filters  = []
     patterns = []
-    for foldi, (train_rd, test_rd) in enumerate(cv.split(Xrd1, yrd1) ):
+    for foldi, (train_inds, test_inds) in enumerate(cv.split(Xrd1, yrd1) ):
         print(f"##############  Starting {cond} fold {foldi}")
-        print('Lens of train and test are :',len(train_rd), len(test_rd) )
+        print('Lens of train and test are :',len(train_inds), len(test_inds) )
 
         valchans = np.arange(Xrd1.shape[1])
         if args.add_epind_channel:
             ind_dim_epind = -1
-            epinds_train  = Xreord[train_rd][:,ind_dim_epind,0].astype(int)
-            epinds_test   = Xreord[test_rd][:,ind_dim_epind,0].astype(int)
+            valchans = valchans[:-1]
+            
+            epinds_train  = Xreord[train_inds][:,ind_dim_epind,0].astype(int)
+            epinds_test   = Xreord[test_inds][:,ind_dim_epind,0].astype(int)
             print(Xreord.shape, epinds_train.shape, epinds_test.shape)
             print('intersection size epinds_train and epinds_test = ', 
-                len(set(epinds_train) & set(epinds_test) ) ) # equal to 0
-            valchans = valchans[:-1]
+                len(set(epinds_train) & set(epinds_test) ) ) # equal to 0            
 
         if args.add_sampleind_channel:
             if args.add_epind_channel:
                 ind_dim_sampleind = -2
             else:
                 ind_dim_sampleind = -1
-            sampleinds_train = Xreord[train_rd][:,ind_dim_sampleind,:].astype(int)
-            sampleinds_test  = Xreord[test_rd][:,ind_dim_sampleind,:].astype(int)
-            inum = len(set(sampleinds_train.flatten()) & set(sampleinds_test.flatten() ) )
-            tnum = len(set(sampleinds_test.flatten()) )
-            print(f'intersection size sampleinds_train and sampleinds_test = {inum} = {100* inum/tnum:.2f}% of test indices ') 
             valchans = valchans[:-1]
-
-
-            train_sample_inds  = Xreord[train_rd][:,ind_dim_sampleind,:]
-            test_sample_inds   = Xreord[test_rd] [:,ind_dim_sampleind,:]
+            
+            # sampleinds_train = Xreord[train_inds][:,ind_dim_sampleind,:].astype(int)
+            # sampleinds_test  = Xreord[test_inds][:,ind_dim_sampleind,:].astype(int)
+            # inum = len(set(sampleinds_train.flatten()) & set(sampleinds_test.flatten() ) )
+            # tnum = len(set(sampleinds_test.flatten()) )
+            # print(f'intersection size sampleinds_train and sampleinds_test = {inum} = {100* inum/tnum:.2f}% of test indices ')             
+            train_sample_inds  = Xreord[train_inds][:,ind_dim_sampleind,:]
+            test_sample_inds   = Xreord[test_inds] [:,ind_dim_sampleind,:]
             m = calc_leackage_sampleinds(train_sample_inds, test_sample_inds, verbose=0)
             cond2ms[cond] += [(m,len(test_sample_inds) )]        
-
-            print('max={}, sum={}, pct={:.3f}%\n'.format(np.max(m), np.sum(m), np.sum(m)*100/len(test_sample_inds) ) )#, np.where(m > 0) )
+            ll = len(test_inds) * Xreord.shape[-1]
+            print('max={}, sum={}, pct={:.3f}%\n'.format(np.max(m), np.sum(m), np.sum(m)*100/ll ) )#, np.where(m > 0) )
 
         if args.leakage_report_only:
             continue
@@ -322,7 +340,15 @@ for cond,epochs in cond2epochs.items():
         Xreord = Xreord[:,valchans,:]
         #print(f'{Xrd1.shape=}, {X.shape=}, {Xreord.shape=}')
 
-        clf.fit(Xrd1[train_rd], yrd1[train_rd])  # fit on random
+        if args.remove_leak_folds:
+            # m.shape = (train_inds.shape[0], test_inds.shape[0] )
+            test_inds_clean = test_inds[ np.max(m, axis=0) <= 2 ]
+            print('len cleaned test {}, len all test inds {}, pct={:.2f}%'.format(len(test_inds_clean), len(test_inds), len(test_inds_clean)*100/len(test_inds) ) )
+        else:
+            test_inds_clean = test_inds
+
+        print('Start training of clf')
+        clf.fit(Xrd1[train_inds], yrd1[train_inds])  # fit on random
 
         # to plot patterns later... not very useful in the end, they are too inconsistent
         if extract_filters_patterns:
@@ -331,25 +357,23 @@ for cond,epochs in cond2epochs.items():
             patterns += [patterns_]
 
         # fit on random, test on random
-        cv_rd_to_rd_score = clf.score(Xrd1[test_rd], yrd1[test_rd])
+        cv_rd_to_rd_score = clf.score(Xrd1[test_inds_clean], yrd1[test_inds_clean])
         # fit on random, test on order
-        cv_rd_to__score = clf.score(X[test_rd], y0[test_rd])
-        # fit on random, test on order simple pred
-        cv_rd_to_sp_score = clf.score(X[test_rd], y_sp[test_rd])
-
-
-        # DQ: is it good to restrict test number so much?
+        cv_rd_to__score = clf.score(X[test_inds_clean], y0[test_inds_clean])
+        # fit on random, test on simple pred (not reordered)
+        cv_rd_to_sp_score = clf.score(X[test_inds_clean], y_sp[test_inds_clean])
+            
         ## does not work because the size of resulting array is not the same as the size of Xreord  
         if args.reord_narrow_test:
             #test_reord = np.isin(orig_nums_reord, test_rd)  # why sum(test_reord) != len(test_rd)
-            print('{} test_rd among orig_nums_reord. Total = {} '.format( len(test_rd), len(test_rd) ) )
-            cv_rd_to_reord_score = clf.score(Xreord[test_rd], yreord[test_rd])
+            print('{} test_rd among orig_nums_reord. Total = {} '.format( len(test_inds), len(test_inds) ) )
+            cv_rd_to_reord_score = clf.score(Xreord[test_inds], yreord[test_inds])
         else:
-            cv_rd_to_reord_score    = clf.score(Xreord[test_rd], yreord[test_rd])
-            cv_rd_to_reord_sp_score = clf.score(Xreord[test_rd], yreord_sp[test_rd])
-
-            # not used so far
-            cv_rd_to_sp_reord_score = clf.score(Xreord[test_rd], ysp_reord[test_rd])
+            cv_rd_to_reord_score    = clf.score(Xreord[test_inds_clean], yreord[test_inds_clean])
+            # simple prediction after reordering
+            cv_rd_to_reord_sp_score = clf.score(Xreord[test_inds_clean], yreord_sp[test_inds_clean])
+            # reordered simpled pred
+            cv_rd_to_sp_reord_score = clf.score(Xreord[test_inds_clean], ysp_reord[test_inds_clean])
 
         dadd(scores,'rd_to_rd',cv_rd_to_rd_score      )
         dadd(scores,f'rd_to_{s}',cv_rd_to__score        )
@@ -359,7 +383,8 @@ for cond,epochs in cond2epochs.items():
         dadd(scores,f'rd_to_{s}_reord_sp',cv_rd_to_reord_sp_score   )
         dadd(scores,f'rd_to_{s}_sp_reord',cv_rd_to_sp_reord_score   )
         #'cv'
-    filters_rd,patterns_rd = np.array(filters), np.array(patterns)
+    if extract_filters_patterns:
+        filters_rd,patterns_rd = np.array(filters), np.array(patterns)
 
     m = None
     for cond,ms in cond2ms.items():
@@ -437,8 +462,6 @@ for cond,ms in cond2ms.items():
 for cond,ms in cond2ms.items():
     print(cond,'avpct={:.2f}%'.format(cond2avpct[cond] ) )
 
-fnf = op.join(results_folder, f'leakage_{args.save_suffix_scores}.npz' )
+fnf = op.join(results_folder, f'leakage{args.save_suffix_scores}.npz' )
 print('Saving ',fnf)
 np.save(fnf , cond2ms )
-
-# %%
