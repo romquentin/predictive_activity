@@ -2,8 +2,6 @@ import numpy as np
 import os.path as op
 import pandas as pd
 import seaborn as sns
-import mne
-from numba import jit
 
 # fixed ordering os subject ids, for convenience
 canon_subj_order =  ['19830114RFTM', '19921111BRHC', '19930630MNSU', '19930118IMSH',
@@ -51,6 +49,7 @@ def events_simple_pred(events, Mtype):
     eventgs -- an MNE-produced events array
     Mtype -- string argument, a key in Mt2M dict or 'rd', it determins for what kind of matrix we generate the 'simple prediction'
     '''
+    import mne
     assert events.ndim == 2
     # this will be the resulting transformed events array
     r = np.zeros_like(events)
@@ -92,6 +91,7 @@ def reorder(random_events, events, raw_rd, del_processed = True,
     returns epochs_reord, orig_nums_reord
     '''
 
+    import mne
     assert abs(raw_rd.info['sfreq'] - 100. ) < 1e-10, raw_rd.info['sfreq']
 
     events_reord = list()  # the reordered events we will construct 
@@ -260,6 +260,7 @@ def dadd(d,k,v):
         d[k] = [v]
 
 def addEpindChan(epochs, inds):
+    import mne
     assert inds.ndim == 1
     inds = inds.reshape(-1,1)
     preeps = np.repeat(inds[:,:,None], epochs._data.shape[2], axis=2)
@@ -275,28 +276,17 @@ def addEpindChan(epochs, inds):
     return eps_full
 
 def addSampleindChan(raw, shift_ind):
+    import mne
     index_info = mne.create_info(ch_names=['index_chan'], sfreq=raw.info['sfreq'], ch_types=['stim'])
     index_data = shift_ind + np.arange(raw._data.shape[1]).reshape(1,-1)
     index_raw = mne.io.RawArray(index_data, index_info)
     raw.add_channels([index_raw], force_update_info=True)
     return raw
 
-@jit(nopython=True)
-def calc_leackage_sampleinds(train_inds, test_inds, verbose=0):
-    m = np.ones( (train_inds.shape[0], test_inds.shape[0] ) ) 
-    for epi in range( train_inds.shape[0] ):
-        train_sample_inds_curep = train_inds[epi,:]
-        for epj in range( test_inds.shape[0] ):
-            test_sample_inds_curep  = test_inds[epj,:]
-            n = np.intersect1d(train_sample_inds_curep, test_sample_inds_curep)
-            m[epi,epj] = len(n)
-        if verbose:
-            print('calc_leackage_sampleinds', epi, len(n) )
-
-    return m
 
 
 def read_raws(p0, force_refilt, tmin, tmax, max_num_epochs_per_cond, add_sampleind_channel, subdf, path_data, events_all, n_jobs):
+    import mne
     import os
     cond2epochs = {}
     cond2raw   = {}
@@ -369,6 +359,7 @@ def read_raws(p0, force_refilt, tmin, tmax, max_num_epochs_per_cond, add_samplei
     return cond2epochs, cond2raw
 
 def gat_stats(X):
+    import mne
     from mne.stats import spatio_temporal_cluster_1samp_test
     """Statistical test applied across subjects"""
     # check input
@@ -386,3 +377,32 @@ def gat_stats(X):
         p_values_[cluster.T] = pval
 
     return np.squeeze(p_values_).T
+
+def printLeakInfo(cond2ms, print_per_fold=True):
+    # L = Xreord.shape[-1]
+    cond2avpct = {}
+    for cond,ms in cond2ms.items():
+        cond2avpct[cond] = 0.
+        cond2avpct[cond + '_clean'] = 0.
+        for foldi,d in enumerate(ms):
+            m = d['leakmat']
+            L = d['num_timebins']
+            num_test = d['len_test_inds']
+
+            ll = num_test * L
+            pct = np.sum(m)*100/ll 
+
+            len_clean_test = d['len_clean_test']
+            pct2 = len_clean_test * 100 / num_test
+            if print_per_fold:
+                print('{:10}, foldi={} max={:.0f}, sum={:5.0f}, pct={:.2f}%. Len clean = {:.2f}% of test'.\
+                  format(cond,foldi, np.max(m), np.sum(m), pct, pct2 ) )
+            cond2avpct[cond] += pct / len(ms)
+            cond2avpct[cond + '_clean'] += pct2 / len(ms)
+
+    for cond,ms in cond2ms.items():
+        print(cond,'avpct={:.2f}%'.format(cond2avpct[cond] ) )
+    for cond,ms in cond2ms.items():
+        cond2 = cond + '_clean'
+        print(cond2,'avpct={:.2f}%'.format(cond2avpct[cond2] ) )
+    return cond2avpct

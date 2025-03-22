@@ -11,8 +11,23 @@ from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 from sklearn.pipeline import make_pipeline
 from sklearn.model_selection import StratifiedKFold
 from collections import Counter
+from numba import jit
 
 from base import * 
+
+@jit(nopython=True)
+def calc_leackage_sampleinds(train_inds, test_inds, verbose=0):
+    m = np.ones( (train_inds.shape[0], test_inds.shape[0] ) ) 
+    for epi in range( train_inds.shape[0] ):
+        train_sample_inds_curep = train_inds[epi,:]
+        for epj in range( test_inds.shape[0] ):
+            test_sample_inds_curep  = test_inds[epj,:]
+            n = np.intersect1d(train_sample_inds_curep, test_sample_inds_curep)
+            m[epi,epj] = len(n)
+        if verbose:
+            print('calc_leackage_sampleinds', epi, len(n) )
+
+    return m
 
 path_data = os.path.expandvars('$DEMARCHI_DATA_PATH') + '/MEG'
 path_results = os.path.expandvars('$DEMARCHI_DATA_PATH') + '/results'
@@ -24,7 +39,7 @@ print(sys.argv)
 #             "--n_jobs=1", "--tmin=\"-0.33\"", "--tmax=\"0.33\"",
 #               "--save_suffix_scores=only_pre_window", "--leakage_report_only=0","--nfolds=2",
 #                           "--shift_orig_inds=-1", "--remove_leak_folds=1"]\
-#--tmin=\"-0.33\" --tmax=\"0.33\" --add_epind_channel=1 --add_sampleind_channel=1 --remove_leak_folds=1 --save_suffix_scores=small_window -s 0
+#--tmin=\"-0.33\" --tmax=\"0.33\" --add_epind_channel=1 --add_sampleind_channel=1 --remove_leak_folds=1 --save_suffix_scores=small_window -s 0 --extract_filters_patterns 0
 
 # Create an ArgumentParser object
 parser = argparse.ArgumentParser()
@@ -53,7 +68,6 @@ args = parser.parse_args()
 
 # Assign the arguments to the variables
 extract_filters_patterns = args.extract_filters_patterns
-nfolds = args.nfolds
 force_refilt = args.force_refilt
 shuffle_cv = bool(args.shuffle_cv)
 
@@ -221,7 +235,7 @@ np.savez(fnf , cond2counts )
 ########################     cross validation
 ###################################################################
 print("------------   Starting CV")
-cv = StratifiedKFold(nfolds, shuffle=shuffle_cv)
+cv = StratifiedKFold(args.nfolds, shuffle=shuffle_cv)
 
 # we need to know minimum number of trials to use it always (they don't actually differ that much but it reduces headache with folds correspondance)
 lens = [ len(ep) for ep in cond2epochs.values() ]
@@ -298,7 +312,7 @@ for cond,epochs in cond2epochs.items():
     filters  = []
     patterns = []
     for foldi, (train_inds, test_inds) in enumerate(cv.split(Xrd1, yrd1) ):
-        print(f"##############  Starting {cond} fold {foldi}")
+        print(f"##############  Starting {cond} fold {foldi} / {args.nfolds}")
         print('Lens of train and test are :',len(train_inds), len(test_inds) )
 
         valchans = np.arange(Xrd1.shape[1])
@@ -327,9 +341,20 @@ for cond,epochs in cond2epochs.items():
             train_sample_inds  = Xreord[train_inds][:,ind_dim_sampleind,:]
             test_sample_inds   = Xreord[test_inds] [:,ind_dim_sampleind,:]
             m = calc_leackage_sampleinds(train_sample_inds, test_sample_inds, verbose=0)
-            cond2ms[cond] += [(m,len(test_sample_inds) )]        
+            d = zip(['leakmat','len_test_inds','num_timebins'],[m,len(test_sample_inds), Xreord.shape[-1] ])
+            d = dict(d)
+            d['test_inds'] = test_inds
+            cond2ms[cond] += [d]        
             ll = len(test_inds) * Xreord.shape[-1]
             print('max={}, sum={}, pct={:.3f}%\n'.format(np.max(m), np.sum(m), np.sum(m)*100/ll ) )#, np.where(m > 0) )
+
+        if args.remove_leak_folds and args.add_sampleind_channel:
+            # m.shape = (train_inds.shape[0], test_inds.shape[0] )
+            test_inds_clean = test_inds[ np.max(m, axis=0) <= 2 ]
+            print('len cleaned test {}, len all test inds {}, pct={:.2f}%'.format(len(test_inds_clean), len(test_inds), len(test_inds_clean)*100/len(test_inds) ) )
+        else:
+            test_inds_clean = test_inds
+        cond2ms[cond][-1]['len_clean_test'] = len(test_inds_clean)
 
         if args.leakage_report_only:
             continue
@@ -340,12 +365,6 @@ for cond,epochs in cond2epochs.items():
         Xreord = Xreord[:,valchans,:]
         #print(f'{Xrd1.shape=}, {X.shape=}, {Xreord.shape=}')
 
-        if args.remove_leak_folds:
-            # m.shape = (train_inds.shape[0], test_inds.shape[0] )
-            test_inds_clean = test_inds[ np.max(m, axis=0) <= 2 ]
-            print('len cleaned test {}, len all test inds {}, pct={:.2f}%'.format(len(test_inds_clean), len(test_inds), len(test_inds_clean)*100/len(test_inds) ) )
-        else:
-            test_inds_clean = test_inds
 
         print('Start training of clf')
         clf.fit(Xrd1[train_inds], yrd1[train_inds])  # fit on random
@@ -386,11 +405,12 @@ for cond,epochs in cond2epochs.items():
     if extract_filters_patterns:
         filters_rd,patterns_rd = np.array(filters), np.array(patterns)
 
-    m = None
-    for cond,ms in cond2ms.items():
-        for foldi,(m,l) in enumerate(ms):
-            ll = l * Xreord.shape[-1]
-            print('-- ', cond,foldi,'max={}, sum={}, pct={:.1f}%'.format(np.max(m), np.sum(m), np.sum(m)*100/ll ) )
+    printLeakInfo(cond2ms)
+    #m = None
+    #for cond,ms in cond2ms.items():
+    #    for foldi,(m,l) in enumerate(ms):
+    #        ll = l * Xreord.shape[-1]
+    #        print('-- ', cond,foldi,'max={}, sum={}, pct={:.1f}%'.format(np.max(m), np.sum(m), np.sum(m)*100/ll ) )
     if args.leakage_report_only:
         continue
 
@@ -450,18 +470,9 @@ for cond,epochs in cond2epochs.items():
     import gc; gc.collect()
 
 # %%
-cond2avpct = {}
-for cond,ms in cond2ms.items():
-    cond2avpct[cond] = 0.
-    for foldi,(m,l) in enumerate(ms):
-        ll = l * Xreord.shape[-1]
-        pct = np.sum(m)*100/ll 
-        print(cond,foldi,'max={}, sum={}, pct={:.2f}%'.format(np.max(m), np.sum(m), pct ) )
-        cond2avpct[cond] += pct / len(ms)
-
-for cond,ms in cond2ms.items():
-    print(cond,'avpct={:.2f}%'.format(cond2avpct[cond] ) )
+cond2avpct = printLeakInfo(cond2ms)
 
 fnf = op.join(results_folder, f'leakage{args.save_suffix_scores}.npz' )
 print('Saving ',fnf)
-np.save(fnf , cond2ms )
+np.savez(fnf , cond2ms )
+#np.savez(fnf, **{cond: ms for cond, ms in cond2ms.items()})

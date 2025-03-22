@@ -22,6 +22,19 @@ run file with arguments
 '''
 
 # python plot_reproduce_and_reorder.py --force_recalc 0 --suffix _small_window --suffix_data _small_window --plot_kind rd_to_all --n_timebins 67 --tmin "-0.33" --tmax 0.33
+# Example command line:
+# python plot_reproduce_and_reorder.py --force_recalc 0 --suffix _small_window --suffix_data _small_window --plot_kind rd_to_all --n_timebins 67 --tmin "-0.33" --tmax 0.33
+
+# VSCode launch.json "args" format:
+# "args": [
+#     "--force_recalc", "0",
+#     "--suffix", "_small_window",
+#     "--suffix_data", "_small_window",
+#     "--plot_kind", "rd_to_all",
+#     "--n_timebins", "67",
+#     "--tmin", "-0.33",
+#     "--tmax", "0.33"
+# ]
 
 # Create an ArgumentParser object
 parser = argparse.ArgumentParser()

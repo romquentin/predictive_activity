@@ -4,13 +4,41 @@
     // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
     "configurations": [
+        
         {
-            "name": "Python Debugger: Python File",
+            "name": "rep_reord_leakonly",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "reproduce_and_reorder_sound.py",
+            "args": ["-s=1", "--add_epind_channel=1", "--add_sampleind_channel=1", "--nfolds=2",
+            "--n_jobs=1", "--tmin=\"-0.33\"", "--tmax=\"0.33\"", 
+            "--save_suffix_scores=only_pre_window", "--leakage_report_only=1",
+            "--remove_leak_folds=1", "--save_suffix_scores=small_window", "--extract_filters_patterns=0"]
+        },
+        {
+            "name": "rep_reord",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "reproduce_and_reorder_sound.py",
+            "args": ["-s=1", "--add_epind_channel=1", "--add_sampleind_channel=1", "--nfolds=2",
+            "--n_jobs=1", "--tmin=\"-0.33\"", "--tmax=\"0.33\"", 
+            "--save_suffix_scores=only_pre_window", 
+            "--remove_leak_folds=1", "--save_suffix_scores=small_window", "--extract_filters_patterns=0"]
+        },
+        {
+            "name": "plot",
             "type": "debugpy",
             "request": "launch",
             "program": "${file}",
-            "args": ["-s=1", "--add_epind_channel=1", "--add_sampleind_channel=1", 
-            "--n_jobs=1", "--tmin=\"-0.33\"", "--tmax=\"0.\"", "--save_suffix_scores=only_pre_window", "--leakage_report_only=1"],
-        }
-    ]
+            "args": [
+                "--force_recalc", "0",
+                "--suffix", "_small_window",
+                "--suffix_data", "_small_window",
+                "--plot_kind", "rd_to_all",
+                "--n_timebins", "67",
+                "--tmin", "-0.33",
+                "--tmax", "0.33"
+            ]
+        },
+    ],
 }
