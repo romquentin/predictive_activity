@@ -203,6 +203,7 @@ reorder_pars = dict(del_processed= del_processed, cut_fl=cut_fl,
     tmin=tmin, tmax=tmax, dur=dur, nsamples=nsamples)
 # cycle over four entropy conditions (targets of reordering)
 for cond,epochs_true in cond2epochs.items():
+    print('Reordering ',cond)
     # original random events
     random_events = epochs_random_init.events.copy()
     # target events
@@ -210,6 +211,7 @@ for cond,epochs_true in cond2epochs.items():
     
     # reorder random events to another entropy condition
     epochs_reord0, orig_inds_reord0 = reorder(random_events, events0, raw_random, **reorder_pars) 
+    evts = epochs_reord0.events # just for debug
     if args.add_epind_channel:
         epochs_reord_ext0 = addEpindChan(epochs_reord0, orig_inds_reord0 )
         cond2epochs_reord[cond] = epochs_reord_ext0
@@ -334,7 +336,7 @@ for cond in args.conds_to_run:
         print(f"##############  Starting {cond} fold {foldi} / {args.nfolds}")
         print('Lens of train and test are :',len(train_inds), len(test_inds) )
 
-        valchans = np.arange(X_random_epochs_oir.shape[1])
+        valchans = np.arange(X_random_epochs_oir.shape[1]) # valid channels (those that will be used for classif)
 
         train_orig = orig_inds_reord[:minl][train_inds].astype(int)  
         test_orig  = orig_inds_reord[:minl][test_inds] .astype(int)  
@@ -367,11 +369,8 @@ for cond in args.conds_to_run:
                 ind_dim_sampleind = -1
             valchans = valchans[:-1]
 
-
             train_sample_inds  = X_random_epochs_reord_cur[train_inds][:,ind_dim_sampleind,:].astype(int)
             test_sample_inds   = X_random_epochs_reord_cur[test_inds] [:,ind_dim_sampleind,:].astype(int)
-            #sampleinds_train = X_random_epochs_reord_cur[train_inds][:,ind_dim_sampleind,:].astype(int)
-            #sampleinds_test  = X_random_epochs_reord_cur[test_inds][:,ind_dim_sampleind,:].astype(int)
             inum = len(set(train_sample_inds.flatten()) & set(test_sample_inds.flatten() ) )
             tnum = len(set(test_sample_inds.flatten()) )
             print(f'naive intersection size sampleinds_train and sampleinds_test = {inum} = {100* inum/tnum:.2f}% of test indices ')             
@@ -388,6 +387,7 @@ for cond in args.conds_to_run:
             else:
                 ll *= int( L / 33.)
             print('max={}, sum={}, pct={:.3f}%\n'.format(np.max(m), np.sum(m), np.sum(m)*100/ll ) )#, np.where(m > 0) )
+            bis_orig = test_orig[ np.max(m,axis=0) > 0 ]
 
         if args.remove_leak_folds and args.add_sampleind_channel:
             # m.shape = (train_inds.shape[0], test_inds.shape[0] )

@@ -100,7 +100,6 @@ def reorder(random_events, events, raw_rd, del_processed = True,
     raw_Xrd = raw_rd.get_data()
     raw_reord = list()  # the reordered X (based on yor), first contains data extracted from raws
     new_sample = 0  # keep track of the current sample to create the reordered events
-    # DQ: why 200?
     raw_reord.append(raw_Xrd[:, :dur])  # start the reorderd random with the 2 first seconds of the random raw
     first_samp = raw_rd.first_samp
     # keep the original trial numbers in the random (for correct cross-validation and also comparison with the same not-reordered random trials)
@@ -325,9 +324,11 @@ def read_raws(p0, force_refilt, tmin, tmax, max_num_epochs_per_cond, add_samplei
             else:
                 shift_timbin_ind_cur += shift_timebin_ind
                 raw_ = addSampleindChan(raw_, shift_timbin_ind_cur)
+                print('pre epochs')
                 epochs = mne.Epochs(raw_, events,
                                     event_id=events_all,
                                     tmin=tmin, tmax=tmax, baseline=None, preload=True, verbose=epochs_verbose_level)
+                print('post epochs')
                 cond2epochs[cond] = epochs
 
             cond2raw[cond] = raw_
@@ -363,7 +364,8 @@ def read_raws(p0, force_refilt, tmin, tmax, max_num_epochs_per_cond, add_samplei
             # Create epochs
             epochs = mne.Epochs(raw, events,
                                 event_id=events_all,
-                                tmin=tmin, tmax=tmax, baseline=None, preload=True, verbose=epochs_verbose_level)
+                                tmin=tmin, tmax=tmax, baseline=None, preload=True, 
+                                verbose=epochs_verbose_level)
             epochs.save( op.join(p0, f'flt_{condcode}-epo.fif'), overwrite=True)
             cond2epochs[cond] = epochs
     return cond2epochs, cond2raw
