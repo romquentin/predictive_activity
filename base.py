@@ -18,6 +18,7 @@ events_omission = [10,20,30,40]
 events_sound = [ 1,2,3,4]
 
 cond2code = dict(zip(['random','midminus','midplus','ordered'],['rd','mm','mp','or']))
+epochs_verbose_level = 'ERROR'
 
 colors_ordered = dict(zip(np.arange(4),  ['blue','cyan','yellow','red'] ) )
 ###### define transition matricies for different entropy conditions
@@ -204,7 +205,7 @@ def reorder(random_events, events, raw_rd, del_processed = True,
 
     epochs_reord = mne.Epochs(raw_reord, events_reord,
          event_id=events_sound,
-         tmin=tmin, tmax=tmax, baseline=None, preload=True)
+         tmin=tmin, tmax=tmax, baseline=None, preload=True, verbose=epochs_verbose_level)
 
     assert len(set(orig_inds_reord)) > 4
     return epochs_reord, orig_inds_reord
@@ -285,7 +286,12 @@ def addSampleindChan(raw, shift_ind):
 
 
 
-def read_raws(p0, force_refilt, tmin, tmax, max_num_epochs_per_cond, add_sampleind_channel, subdf, path_data, events_all, n_jobs):
+def read_raws(p0, force_refilt, tmin, tmax, max_num_epochs_per_cond, add_sampleind_channel, subdf, path_data, events_all, n_jobs,
+    conds_to_run = None):
+
+    if conds_to_run is None:
+        conds_to_run = list(cond2code.keys())
+
     import mne
     import os
     cond2epochs = {}
@@ -302,7 +308,9 @@ def read_raws(p0, force_refilt, tmin, tmax, max_num_epochs_per_cond, add_samplei
 
         # actually read epochs and filtered raws
         shift_timbin_ind_cur = 0.
-        for cond,condcode in cond2code.items():
+        for cond in conds_to_run:
+        #for cond,condcode in cond2code.items():
+            condcode = cond2code[cond]
             s = condcode
             raw_ = mne.io.read_raw_fif(op.join(p0,f'flt_{s}-raw.fif'), preload=True) 
             shift_timebin_ind = max_num_epochs_per_cond * ( raw_.info['sfreq'] * (tmax - tmin) + 2)
@@ -319,7 +327,7 @@ def read_raws(p0, force_refilt, tmin, tmax, max_num_epochs_per_cond, add_samplei
                 raw_ = addSampleindChan(raw_, shift_timbin_ind_cur)
                 epochs = mne.Epochs(raw_, events,
                                     event_id=events_all,
-                                    tmin=tmin, tmax=tmax, baseline=None, preload=True)
+                                    tmin=tmin, tmax=tmax, baseline=None, preload=True, verbose=epochs_verbose_level)
                 cond2epochs[cond] = epochs
 
             cond2raw[cond] = raw_
@@ -327,7 +335,9 @@ def read_raws(p0, force_refilt, tmin, tmax, max_num_epochs_per_cond, add_samplei
     else:
         print('!!!!!   (Re)compute filtered raws from ',p0)
         shift_timbin_ind_cur = 0.
-        for cond,condcode in cond2code.items():
+        for cond in conds_to_run:
+        #for cond,condcode in cond2code.items():
+            condcode = cond2code[cond]
             
             fnf = op.join(path_data, subdf.loc[cond,'path'] )
             # Read raw file
@@ -353,7 +363,7 @@ def read_raws(p0, force_refilt, tmin, tmax, max_num_epochs_per_cond, add_samplei
             # Create epochs
             epochs = mne.Epochs(raw, events,
                                 event_id=events_all,
-                                tmin=tmin, tmax=tmax, baseline=None, preload=True)
+                                tmin=tmin, tmax=tmax, baseline=None, preload=True, verbose=epochs_verbose_level)
             epochs.save( op.join(p0, f'flt_{condcode}-epo.fif'), overwrite=True)
             cond2epochs[cond] = epochs
     return cond2epochs, cond2raw
@@ -378,7 +388,7 @@ def gat_stats(X):
 
     return np.squeeze(p_values_).T
 
-def printLeakInfo(cond2ms, print_per_fold=True):
+def printLeakInfo(cond2ms, print_per_fold=True, leakage_report_scale_by_time = True):
     # L = Xreord.shape[-1]
     cond2avpct = {}
     for cond,ms in cond2ms.items():
@@ -389,7 +399,11 @@ def printLeakInfo(cond2ms, print_per_fold=True):
             L = d['num_timebins']
             num_test = d['len_test_inds']
 
-            ll = num_test * L
+            ll = num_test 
+            if leakage_report_scale_by_time:
+                ll *= L
+            else:
+                ll *= int( L / 33.)
             pct = np.sum(m)*100/ll 
 
             len_clean_test = d['len_clean_test']
