@@ -390,23 +390,43 @@ def gat_stats(X):
 
     return np.squeeze(p_values_).T
 
-def printLeakInfo(cond2ms, print_per_fold=True, leakage_report_scale_by_time = True):
+def printLeakInfo(cond2ms, print_per_fold=True, leakage_report_scale_by_time = True, mode = 'mean'):
     # L = Xreord.shape[-1]
     cond2avpct = {}
+    cond2avpct_naive = {}
+    print(f'Mode of analysis of leakage matrix = {mode}')
     for cond,ms in cond2ms.items():
         cond2avpct[cond] = 0.
         cond2avpct[cond + '_clean'] = 0.
+        cond2avpct_naive[cond] = 0.
+        cond2avpct_naive[cond + '_clean'] = 0.
         for foldi,d in enumerate(ms):
             m = d['leakmat']
             L = d['num_timebins']
             num_test = d['len_test_inds']
+            num_train = d['len_train_inds']
+
+            cond2avpct_naive[cond] += d.get('num_isect_naive',0)
+            #cond2avpct_naive[cond] += d.get('num_isect_naive',0)
 
             ll = num_test 
             if leakage_report_scale_by_time:
                 ll *= L
             else:
+                raise ValueError('this is nonsense, dont use it')
                 ll *= int( L / 33.)
-            pct = np.sum(m)*100/ll 
+
+            if   mode == 'max':
+                ma = np.max(m, axis=0) # train x test
+                pct = np.sum(ma)*100/ll 
+            elif mode == 'mean':
+                me = np.mean(m, axis=0) # train x test
+                pct = np.sum(me)*100/ll 
+            elif mode == 'mean_global':
+                ll *= num_train
+                pct = np.sum(m)*100/ll 
+            elif mode == 'none':
+                pct = np.sum(m)*100/ll 
 
             len_clean_test = d['len_clean_test']
             pct2 = len_clean_test * 100 / num_test
@@ -416,9 +436,13 @@ def printLeakInfo(cond2ms, print_per_fold=True, leakage_report_scale_by_time = T
             cond2avpct[cond] += pct / len(ms)
             cond2avpct[cond + '_clean'] += pct2 / len(ms)
 
+        #for foldi,d in enumerate(ms):
+        #cond2avpct_naive
+
     for cond,ms in cond2ms.items():
-        print(cond,'avpct={:.2f}%'.format(cond2avpct[cond] ) )
+        print('{:8} leak avpct={:.2f}%'.format(cond, cond2avpct[cond] ) )
+
     for cond,ms in cond2ms.items():
         cond2 = cond + '_clean'
-        print(cond2,'avpct={:.2f}%'.format(cond2avpct[cond2] ) )
+        print('{:8} avpct={:.2f}%'.format(cond, cond2avpct[cond2] ) )
     return cond2avpct

@@ -50,6 +50,7 @@ parser.add_argument("--tmin", type=float, default=-0.7)
 parser.add_argument("--tmax", type=float, default=0.7)
 parser.add_argument("--n_jobs", type=int, default=-1)
 parser.add_argument("--n_timebins", type=int, default=141, help='number of time bins')
+parser.add_argument("--plot_data_save_dir", type=str, default='./plot_data', help='save directory')
  
 
 args = parser.parse_args()
@@ -273,7 +274,7 @@ for lbl in plots_to_make:
 
     # commute spearman correlation as in Demarchi et al. across entropies
     # Initialize spearman rho results
-    fn = f'{lbl}_rhos{stimtype}{suffix}.npz'
+    fn = pjoin(args.plot_data_save_dir, f'{lbl}_rhos{stimtype}{suffix}.npz' )
     if not os.path.exists(fn) or force_recalc:
         print('Compute rhos')
         rhos = np.zeros([nsubj, nsamples, n_timebins])
@@ -300,7 +301,7 @@ for lbl in plots_to_make:
         rhos = f['arr_0'][()]
     lbl2rhos[lbl] = rhos
 
-    fn = f'{lbl}_allsig{stimtype}{suffix}.npz'
+    fn = pjoin(args.plot_data_save_dir,f'{lbl}_allsig{stimtype}{suffix}.npz' )
     # Plot main figure of Demarchi et al. (Fig3a)
     vmin, vmax = lims_scores
     norm1 = colors.Normalize(vmin=vmin, vmax=vmax)
@@ -312,12 +313,12 @@ for lbl in plots_to_make:
         for an in anscur[::-1]:
         #for scores in tqdm([all_cv_rd_to_or_scores, all_cv_rd_to_mp_scores, all_cv_rd_to_mm_scores, all_cv_rd_to_rd_scores, rhos]):
             scores = an2scores[an]
-            print('iteration')
+            print('   clustering iteration')
             gat_p_values = gat_stats(np.array(scores) - chance)
             sig = np.array(gat_p_values < 0.05)
             all_sig.append(sig)
 
-        print('iteration')
+        print('   clustering iteration out')
         gat_p_values = gat_stats(rhos)
         sig = np.array(gat_p_values < 0.05)
         all_sig.append(sig)
@@ -393,7 +394,7 @@ if 'diff' in plots_to_make:
 
     # compute spearman correlation as in Demarchi et al. across entropies
     # Initialize spearman rho results
-    fn = f'diff_rhos{stimtype}{suffix}.npz'
+    fn = pjoin(args.plot_data_save_dir,f'diff_rhos{stimtype}{suffix}.npz' )
     if not os.path.exists(fn) or force_recalc:
         print('Compute rhos diff')
         rhos_diff = np.zeros([nsubj, nsamples, n_timebins])
@@ -421,7 +422,7 @@ if 'diff' in plots_to_make:
     # get permutations clusters
     diff_all_sig = list()
     print('Compute clustering diff')
-    fn = f'diff_allsig{stimtype}{suffix}.npz'
+    fn = pjoin(args.plot_data_save_dir, f'diff_allsig{stimtype}{suffix}.npz')
     if not os.path.exists(fn) or force_recalc:
         for an in ans1[::-1]:
         #for scores in tqdm([diff_rd_to_orrd, diff_rd_to_mprd, diff_rd_to_mmrd, diff_rd_to_rd, rhos_diff]):

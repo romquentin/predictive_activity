@@ -241,7 +241,7 @@ for cond,epochs_true in cond2epochs.items():
 
 
 # save counts of all classes to process later (not in this script)
-fnf = op.join(results_folder, f'cond2counts.npz' )
+fnf = op.join(results_folder, f'cond2counts{args.save_suffix_scores}.npz' )
 print('Saving ',fnf)
 np.savez(fnf , cond2counts )
 
@@ -272,7 +272,7 @@ else:
     clf = make_pipeline(LinearDiscriminantAnalysis())
 clf = GeneralizingEstimator(clf, n_jobs=args.n_jobs, scoring='accuracy', verbose=gen_est_verbose)
 
-cond2ms={}
+cond2leak_mat={}
 
 # %%
 # cycle over entropies
@@ -280,7 +280,7 @@ for cond in args.conds_to_run:
 #for cond,epochs_true in cond2epochs.items():
     epochs_true = cond2epochs[cond]
     print(f"-----  CV for {cond}")
-    cond2ms[cond] = []  # condition 2 leakage table
+    cond2leak_mat[cond] = []  # condition 2 leakage table
 
     # keep only the same number of trials for all conditions
     epochs_true = epochs_true[:minl]  
@@ -291,7 +291,9 @@ for cond in args.conds_to_run:
     y_sp = y_sp_[:, 2] 
 
     #----------
-    orig_inds_reord = cond2orig_inds_reord[cond] + args.shift_orig_inds # here we shift the indices of random events
+    orig_inds_reord = cond2orig_inds_reord[cond] # here we shift the indices of random events
+    if args.shift_orig_inds:
+        orig_inds_reord = orig_inds_reord[args.shift_orig_inds:] # here we shift the indices of random events
     # TODO: find way to use both sp and not sp, reord and not
 
     # keep same trials in epochs_rd and epochs_reord
@@ -348,8 +350,12 @@ for cond in args.conds_to_run:
 
         train_ext = train_orig_set | set(train_orig_shift)
         test_ext  = test_orig_set | set(test_orig_shift)
+
+        train_ext2 = train_orig_set | set(train_orig_set - 1) | set(train_orig_set - 2) | set(train_orig_set + 1)     
+        test_ext2  = test_orig_set  | set(test_orig_set  - 1) | set(test_orig_set  - 2) | set(test_orig_set  + 1)
         print(f'{100*len(train_orig_set & test_orig_set ) / len(test_orig_set ) =}','%' )             
         print(f'{100*len(train_ext & test_ext )/len(test_ext) =}','%'  )             
+        print(f'{100*len(train_ext2 & test_ext2 )/len(test_ext2) =}','%'  )             
 
         if args.add_epind_channel:
             ind_dim_epind = -1
@@ -371,38 +377,43 @@ for cond in args.conds_to_run:
 
             train_sample_inds  = X_random_epochs_reord_cur[train_inds][:,ind_dim_sampleind,:].astype(int)
             test_sample_inds   = X_random_epochs_reord_cur[test_inds] [:,ind_dim_sampleind,:].astype(int)
-            inum = len(set(train_sample_inds.flatten()) & set(test_sample_inds.flatten() ) )
+            isect = set(train_sample_inds.flatten()) & set(test_sample_inds.flatten() )
+            inum = len(isect )
             tnum = len(set(test_sample_inds.flatten()) )
             print(f'naive intersection size sampleinds_train and sampleinds_test = {inum} = {100* inum/tnum:.2f}% of test indices ')             
 
-            m = calc_leackage_sampleinds(train_sample_inds, test_sample_inds, verbose=0)
-            d = zip(['leakmat','len_test_inds','num_timebins'],[m,len(test_sample_inds), X_random_epochs_reord_cur.shape[-1] ])
+            leakage_mat = calc_leackage_sampleinds(train_sample_inds, test_sample_inds, verbose=0)
+            d = zip(['leakmat','len_test_inds','num_timebins'],[leakage_mat,len(test_sample_inds), X_random_epochs_reord_cur.shape[-1] ])
             d = dict(d)
-            d['test_inds'] = test_inds
-            cond2ms[cond] += [d]        
+            d['test_inds']  = test_inds
+            d['train_inds'] = train_inds
+            d['len_train_inds'] = len(train_inds)
+            d['num_isect_naive'] = inum
+            cond2leak_mat[cond] += [d]        
             ll = len(test_inds) 
             L = X_random_epochs_reord_cur.shape[-1]
             if args.leakage_report_scale_by_time:
                 ll *= L 
             else:
                 ll *= int( L / 33.)
-            print('max={}, sum={}, pct={:.3f}%\n'.format(np.max(m), np.sum(m), np.sum(m)*100/ll ) )#, np.where(m > 0) )
-            bis_orig = test_orig[ np.max(m,axis=0) > 0 ]
+            print('max={}, sum={}, pct={:.3f}%\n'.format(np.max(leakage_mat), np.sum(leakage_mat), np.sum(leakage_mat)*100/ll ) )#, np.where(m > 0) )
+            bis_orig = test_orig[ np.max(leakage_mat,axis=0) > 0 ]
 
         if args.remove_leak_folds and args.add_sampleind_channel:
             # m.shape = (train_inds.shape[0], test_inds.shape[0] )
-            test_inds_clean = test_inds[ np.max(m, axis=0) <= 2 ]
+            test_inds_clean  = test_inds[ np.max(leakage_mat, axis=0) <= 2 ]
+            #test_inds_clean2 = test_inds[ np.max(leakage_mat, axis=0) <= 2 ]
             print('len cleaned test {}, len all test inds {}, pct={:.2f}%'.format(len(test_inds_clean), len(test_inds), len(test_inds_clean)*100/len(test_inds) ) )
         else:
             test_inds_clean = test_inds
-        cond2ms[cond][-1]['len_clean_test'] = len(test_inds_clean)
+        cond2leak_mat[cond][-1]['len_clean_test'] = len(test_inds_clean)
 
         if args.leakage_report_only:
             continue
         # Run cross validation for the ordered (and reorder-order) (and keep the score on the random too only here)
         # Train and test with cross-validation
-        X_random_epochs_oir   = X_random_epochs_oir[:,valchans,:]
-        X_cur_epochs      = X_cur_epochs[:,valchans,:]
+        X_random_epochs_oir       = X_random_epochs_oir[:,valchans,:]
+        X_cur_epochs              = X_cur_epochs[:,valchans,:]
         X_random_epochs_reord_cur = X_random_epochs_reord_cur[:,valchans,:]
         #print(f'{Xrd1.shape=}, {X.shape=}, {Xreord.shape=}')
 
@@ -416,8 +427,11 @@ for cond in args.conds_to_run:
             filters  += [filters_]
             patterns += [patterns_]
 
-        # fit on random, test on random
-        cv_rd_to_rd_score = clf.score(X_random_epochs_oir[test_inds_clean], y_ev_random_epochs_oir[test_inds_clean])
+        if len(test_inds_clean ):
+            # fit on random, test on random
+            cv_rd_to_rd_score = clf.score(X_random_epochs_oir[test_inds_clean], y_ev_random_epochs_oir[test_inds_clean])
+        else:
+            cv_rd_to_rd_score = None
         # fit on random, test on current condition
         cv_rd_to__score = clf.score(X_cur_epochs[test_inds_clean], y_ev_cur_cond[test_inds_clean])
         # fit on random, test on simple pred (not reordered)
@@ -446,7 +460,7 @@ for cond in args.conds_to_run:
     if extract_filters_patterns:
         filters_rd,patterns_rd = np.array(filters), np.array(patterns)
 
-    printLeakInfo(cond2ms, leakage_report_scale_by_time = args.leakage_report_scale_by_time)
+    printLeakInfo(cond2leak_mat, leakage_report_scale_by_time = args.leakage_report_scale_by_time)
     #m = None
     #for cond,ms in cond2ms.items():
     #    for foldi,(m,l) in enumerate(ms):
@@ -512,9 +526,9 @@ for cond in args.conds_to_run:
     import gc; gc.collect()
 
 # %%
-cond2avpct = printLeakInfo(cond2ms, leakage_report_scale_by_time = args.leakage_report_scale_by_time)
+cond2avpct = printLeakInfo(cond2leak_mat, leakage_report_scale_by_time = args.leakage_report_scale_by_time)
 
 fnf = op.join(results_folder, f'leakage{args.save_suffix_scores}.npz' )
 print('Saving ',fnf)
-np.savez(fnf , cond2ms )
+np.savez(fnf , cond2leak_mat )
 #np.savez(fnf, **{cond: ms for cond, ms in cond2ms.items()})
