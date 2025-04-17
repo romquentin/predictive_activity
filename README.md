@@ -5,7 +5,7 @@
 
 ## 🚀 About
 
-The goal of this repository is to re-analyse Demarchi et al. 2019 (Automatic and feature-specific prediction-related neural activity in the human auditory system) data and reproduce their results. We conclude using two approaches (an empirical one and a theoretical one) that there is no evidence of feature-specific prediction-related neural activity in this dataset. We thank Demarchi et al. for making their data available through open access: https://zenodo.org/record/3268713
+The goal of this repository is to re-analyse Demarchi et al. 2019 (Automatic and feature-specific prediction-related neural activity in the human auditory system) data and reproduce their results. We conclude using two approaches (an empirical one and a theoretical one) that there is no evidence of feature-specific prediction-related neural activity in this dataset (in the form of a sensory template). We thank Demarchi et al. for making their data available through open access: https://zenodo.org/record/3268713
 
 # How to use
 
