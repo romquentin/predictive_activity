@@ -9,7 +9,7 @@ from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 from sklearn.pipeline import make_pipeline
 from sklearn.model_selection import KFold
 
-from base_newCV import (canon_subj_order, corresp, events_simple_pred,
+from base import (canon_subj_order, corresp, events_simple_pred,
                         events_omission, events_sound, reorder, check_intersection)
 # Define the path to the data
 os.environ['DEMARCHI_DATA_PATH'] = '/Users/romainquentin/Desktop/data/MEG_demarchi'
