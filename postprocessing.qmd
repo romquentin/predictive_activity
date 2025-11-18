@@ -43,12 +43,10 @@ theme_update(text = element_text(family = "Arial"))
 path.root <- "./data/results"
 list.subj <- list.dirs(path.root, full.names = F, recursive = F)
 
-path.confmat <- "./data/results"
-
 n.subj <- length(list.subj)
 
-time_offset <- case_when(mode.classif == "results" ~ 700,
-                         mode.classif == "results_v3" ~ 670)
+time_offset <- case_when(stim == "omissions" ~ 700,
+                         stim == "sounds" ~ 670)
 
 save <- TRUE
 ```
@@ -626,7 +624,7 @@ for (entropy in c("RD","MM","MP","OR")) {
   for (s in list.subj) {
     
     # --- load the confusion matrix
-    tmp.file <- os$path$join(path.confmat, s, "reorder_random", "rd_to_rd_confmats.npz") %>%
+    tmp.file <- os$path$join(path.root, s, "rd_to_rd_confmats.npz") %>%
       np$load()
     
     # --- crop around S0 (decoded stimulus)
