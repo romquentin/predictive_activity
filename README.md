@@ -8,13 +8,13 @@
 
 The goal of this repository is to re-analyse Demarchi et al. 2019 (Automatic and feature-specific prediction-related neural activity in the human auditory system) data and reproduce their results. We conclude using two approaches (an empirical one and a theoretical one) that there is no evidence of feature-specific prediction-related neural activity in this dataset (in the form of a sensory template). We thank Demarchi et al. for making their data available through open access: <https://zenodo.org/record/3268713>
 
-# How to use
+## ⚙️ How to use
 
 Below, **steps 1-3** perform **supervised classification of raw MEG data** following various decoding approaches. These steps involve executing **Python** scripts.
 
 **Steps 4-6** calculate the correlation between decoding accuracy and sequence entropy, perform **cluster-based permutation statistical tests** on accuracy and correlation time-generalization matrices, and **plot** all the figures and supplementary figures of the paper. These steps are done in **R**.
 
-> [!NOTE] 
+> [!TIP] 
 > To save disk space and/or computation time, you can skip steps 1-3 and download classification data (accuracy and confusion matrices) from [Zenodo](https://doi.org/10.5281/zenodo.17699784) (87MB)
 
 1.  Download the original data from Demarchi et al. (2019) at this link: <https://zenodo.org/record/3268713> (~24GB)
